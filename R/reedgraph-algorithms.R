@@ -94,23 +94,50 @@ rg.remove.edges <- function(g,path) {
   return(g)
 }
   
-### generates a quick and dirty commodity list
+### generates a quick and dirty demand list
 ### of unit demand between each pair of nodes
-rggencomm <- function(g) {
+### each element is [source, sink, demand]
+rg.gen.demands <- function(g,num=NULL,val=1.0) {
   comm <- list()
-  for(i in nodes(g)) {
+  n=0;
+  if( is.null(num) ) { # all pairs uniform demands
+    for(i in nodes(g)) {
       for(j in nodes(g)) {
-        if ( i != j )
-          comm <- c(comm,list(list(head=i,tail=j,demand=1.0)))
+        if ( i != j ) {
+          comm[[as.character(n)]] <- list(source=i,sink=j,demand=val)
+          n <- n+1
+        }
       }
+    }
+  } else { # random selection of nodes
+    numnodes <- length(nodes(g))
+    for(i in seq(1:num)) {
+      fromto <- floor(runif(2,min=1,max=numnodes+1))
+      while(fromto[1] == fromto[2])
+        fromto <- floor(runif(2,min=1,max=numnodes+1))
+      comm[[as.character(n)]] <- list(
+                                       source=
+                                       as.character(fromto[1]),
+                                       sink=
+                                       as.character(fromto[2])
+                                       ,demand=val)
+      n <- n+1
   }
-  comm
+}
+comm
+}
+
+rg.set.demands.demand <- function(demands,val) {
+  for(n in names(demands)) {
+    demands[[n]]$demand <- val
+  }
+  demands
 }
 
 ### Sets the capacity of the edges on the graph
 rg.set.capacity <- function(g,val) {
   em <- edgeMatrix(g)
-  if (match("capacity",names(edgeDataDefaults(G)),nomatch=0) == 0) {
+  if (match("capacity",names(edgeDataDefaults(G)),nomatch=0)) {
     edgeDataDefaults(g,"capacity") <- 1.0
   }
   edgeData(g,
@@ -126,7 +153,7 @@ rg.set.capacity <- function(g,val) {
 ### labels as numbers
 ### use g <- rg.relabel(g)
 rg.relabel <- function(myg) {
-  nodes(myg) <- as.character(seq(1:length(nodes(G))))
+  nodes(myg) <- as.character(seq(1:length(nodes(myg))))
   myg
 }
 
@@ -164,33 +191,285 @@ rg.set.weight.on.path <- function(g,path,val) {
 
 
 
-### Compute the multicommodity flow in a graph using naive shortest path
-### g graph of type graphNEL with the edge weight variable being capacity
-### demands a matrix each row is a commodity vector [source, sink, demand]
-### !!! At the moment this just computes a niave flow !!! ie the
-### flows all follow the shortest path - very much indevelopment!
+
+### Compute the multicommodity flow in a graph using naive shortest
+### path g graph of type graphNEL with the edge weight variable used
+### for the shortest path and capacities ignored (ie it may overbook
+### an edge)
+### demands: a list each element is a list [source, sink, demand]
 rg.sp.multicomm.flow <- function(g,demands) {
-  g <- rg.relabel(g)
 
-  gdual <- g
-  edgeDataDefaults(gdual,"weight") <- 1
+  updateFlow <- function(penult,mincap,demand) {
+    s <- demand$source
+    t <- demand$sink
+    p <- t
+    t <- penult[[t]]
+    tag <- paste(t,"|",p,sep="")
+    if(is.null(demand$edges[[tag]])) {
+      demand$edges[[tag]] <- mincap
+    } else {
+      demand$edges[[tag]] <-
+        demand$edges[[tag]] + mincap
+    }
+    
+    while(s !=t ) {
+      p <- t
+      t <- penult[[t]]
+      tag <- paste(t,"|",p,sep="")
+      if(is.null(demand$edges[[tag]])) {
+        demand$edges[[tag]] <- mincap
+      } else {
+        demand$edges[[tag]] <-
+          demand$edges[[tag]] + mincap
+      }
+      
+    }
+    
+    demand$flow <- demand$flow + mincap
+    demand
+  }
 
-  gprim <- g
-  edgeDataDefaults(gprim,"weight") <- 0
+  for(c in names(demands)) {
+    demands[[c]]$edges <- list()
+    demands[[c]]$flow <- 0
+  }
 
+
+  gsol <- g
   g.sp <- list()
-  
+  edgeDataDefaults(gsol,"weight") <- 0
+
+  ccount <- 1
   for(i in demands) {
     ## calculate dijkstra.sp if we do not have one for this vertex
-    if(is.null(g.sp[[i$head]])) g.sp[[i$head]] <- dijkstra.sp(gdual,start=i$head)$penult
-    path <- extractPath(i$head,i$tail,g.sp[[i$head]])
-    gprim <- rg.addto.weight.on.path(gprim,path,i$demand)
+    if(is.null(g.sp[[i$source]]))
+      g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
+    path <- extractPath(i$source,i$sink,g.sp[[i$source]])
+    gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+    demands[[ccount]] <- updateFlow(g.sp[[i$source]],i$demand,i)
+    ccount <- ccount + 1
   }
-  return(gprim)
+
+  f <- as.double(edgeData(gsol,attr="weight"))
+  c <- as.double(edgeData(gsol,attr="capacity"))
+  lambda <- min(c/f)
+  
+  demands <- rg.max.concurrent.flow.rescale.demands(demands,lambda)
+  gsol <- rg.max.concurrent.flow.graph(gsol,demands)
+  cat("lambda=",lambda,"\n",sep="")
+
+  retval <-  list(demands=demands,gflow=gsol,lambda=lambda)
+  
+  return(retval)
 }
 
-rg.sp.multicomm.flow <- function(g,demands) {
+### incomplete!
+rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1) {
+  estimate <- rg.sp.multicomm.flow(g,demands)
   
 
 }
+### Compute the maximum concurrent flow See Fleischer "Approximating
+### fractional multicommodity flow independent of the number of
+### commodities", SIAM J. Discrete Maths, Vol 13/4, pp 505-520
+###
+### g: graphNEL (vertex labels need to be same as vertex index)
+### demands: vector
+###
+### g: graphNEL with capacity data on each edge, edge
+### weight is ignored (traffic is routed over any way to meet
+### concurrent flow
+###
+### e: accuracy ( 0 < e < 1 ) 0 is more accurate, 1 less accurate
+###
+### output: list:
+###              graph: with weight set to edge flow
+###              demands: each with met demand and paths
 
+rg.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE) {
+
+  savedemands <- demands
+  ## note this is not the dual value
+  calcD <- function() {
+    sum(as.double(edgeData(gdual,attr="capacity"))*
+        as.double(edgeData(gdual,attr="weight")))
+  }
+
+  ## at the end this is the dual solution value
+  ##
+  calcBeta <- function(demands,gdual) {
+    Alpha <- 0
+
+    for(demand in demands) {
+      sp <- dijkstra.sp(gdual,demand$source)
+      Alpha <- Alpha + demand$demand * sp$distances[[demand$sink]]
+    }
+    Beta <- calcD() / Alpha
+    Beta
+  }
+
+  ## at the end this is the primal solution value
+  calcLambda <- function(demands) {
+    d <- as.double(lapply(demands,"[[","demand"))
+    f <- as.double(lapply(demands,"[[","flow"))
+    lambda <- min(f/d)
+    lambda
+  }
+  updateFlow <- function(penult,mincap,demand) {
+    s <- demand$source
+    t <- demand$sink
+    p <- t
+    t <- penult[[t]]
+    tag <- paste(t,"|",p,sep="")
+    if(is.null(demand$edges[[tag]])) {
+      demand$edges[[tag]] <- mincap
+    } else {
+      demand$edges[[tag]] <-
+        demand$edges[[tag]] + mincap
+    }
+    while(s !=t ) {
+      p <- t
+      t <- penult[[t]]
+      tag <- paste(t,"|",p,sep="")
+      if(is.null(demand$edges[[tag]])) {
+        demand$edges[[tag]] <- mincap
+      } else {
+        demand$edges[[tag]] <-
+          demand$edges[[tag]] + mincap
+      }
+
+    }
+
+    demand$flow <- demand$flow + mincap
+    demand
+  }
+
+  doubleCount <- 0
+  doubleDemands <- function(demands) {
+    for(n in names(demands)) {
+      demands[[n]]$demand <- demands[[n]]$demand * 2
+    }
+    doubleCount <- doubleCount + 1
+    demands
+  }
+  
+  gdual <- g
+  # number of arcs
+  m <- length(rg.edgeL(g))
+  delta <- (m / (1-e)) ^ (-1/e)
+  capacities <- as.double(edgeData(g,attr="capacity"))
+  fromedges <- edgeMatrix(g)[1,]
+  toedges <- edgeMatrix(g)[2,]
+
+  edgeData(gdual,
+           as.character(fromedges),
+           as.character(toedges),
+           "weight") <- delta / capacities
+
+  for(c in names(demands)) {
+    demands[[c]]$edges <- list()
+    demands[[c]]$flow <- 0
+  }
+  print(calcD())
+
+  doubreq <- 2/e * log(m/(1-e),base=(1+e))
+  phases <- 0
+  totalphases <- 0
+  while(calcD() < 1 ) {
+    print(calcD())
+
+    if(phases > doubreq) {
+      print("Doubling required")
+      demands <- doubleDemands(demands)
+      phases <- 0
+    }
+
+    ccount <- 1
+    for(c in demands) {
+      demand <- c$demand
+
+      while( calcD() < 1 && demand > 0 ) {
+        sp <- dijkstra.sp(gdual,c$source)
+        p <- extractPath(c$source,c$sink,sp$penult)
+        caponpath <- as.double(edgeData(gdual,
+                                        from=as.character(p[1:length(p)-1]),
+                                        to=as.character(p[2:length(p)]),
+                                        attr="capacity"))
+
+        mincap <- min(demand,caponpath)
+
+        demand <- demand - mincap
+        
+        lengths <- as.double(edgeData(gdual,
+                                      from=as.character(p[1:length(p)-1]),
+                                      to=as.character(p[2:length(p)]),
+                                      attr="weight"))
+        lengths <- lengths * (1 + (e*mincap) / caponpath)
+        edgeData(gdual,from=as.character(p[1:length(p)-1]),
+                 to=as.character(p[2:length(p)]),
+                 attr="weight") <- lengths
+        if(updateflow)
+          c <- updateFlow(sp$penult,mincap,c)
+
+      }
+      demands[[ccount]] <- c
+      ccount <- ccount + 1
+    }
+    phases <- phases +1
+    totalphases <- totalphases + 1
+  }
+  ## If there had been demands doubling we need to
+  ## fix things for the returned demands
+  for(n in names(demands)) {
+    demands[[n]]$demand <- savedemands[[n]]$demand
+  }
+
+  print("finished")
+  cat("D=",calcD(),"\n",sep="")
+  cat("in",totalphases,"phases\n")
+
+  scalef <- 1 / log(1/delta,base=(1+e))
+  demands <- rg.max.concurrent.flow.rescale.demands(demands,scalef)
+
+  beta <- calcBeta(demands,gdual)
+  cat("beta=",beta,"\n",sep="")
+
+  lambda=NULL
+  if(updateflow) {
+    lambda <- calcLambda(demands)
+    cat("lambda=",lambda,"\n",sep="")
+      foundratio <- beta / lambda
+    ratiobound <- (1-e)^-3
+    cat("Ratio dual/primal=",foundratio,
+        " Ratio bound=",ratiobound,"\n",sep="")
+    
+  }
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+  retval <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda)
+  retval
+}
+
+
+rg.max.concurrent.flow.rescale.demands <- function(demands,scalef) {
+
+  for(dn in names(demands)) {
+    demands[[dn]]$flow <- demands[[dn]]$flow * scalef
+    for(en in names(demands[[dn]]$edges)) {
+      demands[[dn]]$edges[[en]] <- demands[[dn]]$edges[[en]] * scalef
+    }
+  }
+  demands
+}
+
+rg.max.concurrent.flow.graph <- function(g,demands) {
+  edgeDataDefaults(g,"weight") <- 0
+  for(d in demands) {
+    for(en in names(d$edges)) {
+      from <- strsplit(en,"|",fixed=TRUE)[[1]][1]
+      to <- strsplit(en,"|",fixed=TRUE)[[1]][2]
+      edgeData(g,from=from,to=to,attr="weight") <-
+        as.double(edgeData(g,from=from,to=to,attr="weight")) + d$edges[[en]]
+    }
+  }
+  g
+}

@@ -1,7 +1,4 @@
 #include "rgalgorithms.h"
-//#define LOWESTFIRSTDEMANDS
-#define RANDOMDEMANDS
-//#define CONSTRAINEDDEMANDS
 
 extern "C" {
 
@@ -454,7 +451,7 @@ SEXP rg_test_c(SEXP v) {
   
   }
 
-  // this used by ifdef LOWESTFIRSTDEMANDS
+  // this used by ifdef LOWESTFIRSTDEMANDS, probably remove now
   std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
 					   std::vector<double>& vlengths) {
 	int numpaths = paths.size();
@@ -503,6 +500,7 @@ SEXP rg_test_c(SEXP v) {
 	return minp;
   }
 
+  // these two probably obsolete, but keep for future sort of vector<pair>
 struct less_cost {
 public:
   bool operator()(const std::pair<int, double> a,
@@ -519,230 +517,7 @@ public:
 };
 
 
-  SEXP rg_fleischer_max_concurrent_flow_restricted_c
-  (
-   SEXP RRdemandpaths,
-   SEXP Rdemands,
-   SEXP Rcapacity,
-   SEXP Re,
-   SEXP Rprogress,
-   SEXP pb,
-   SEXP Rintgamma,
-   SEXP env
-   ) {
 
-	bool progress=Rcpp::as<bool>(Rprogress);
-	double e = Rcpp::as<double>(Re);
-	double intgamma = Rcpp::as<double>(Rintgamma);
-	bool calcgamma=false;
-	if(intgamma >=0) 
-	  calcgamma=true;
-	std::vector<double> vcapacity = RcppVector<double>(Rcapacity).stlVector();
-	std::vector<double> vdemands = RcppVector<double>(Rdemands).stlVector();
-	std::vector<double> origdemands(vdemands);	
-
-	int numD = vdemands.size();
-	std::vector<double>::iterator vecdit;
-	int M = vcapacity.size();
-	//decode Rdemandpaths into paths
-	std::vector<int>::iterator vi,ve;
-	std::vector< std::vector< std::vector<int> > > paths;
-	std::vector< std::vector< std::vector<int> > >::iterator dit;
-	std::vector< std::vector<int> >::iterator pit;
-	std::vector<int>::iterator eit;
-
-	Rcpp::List demands(RRdemandpaths);
-	int sz = demands.size();
-	paths.resize(sz);
-	for(int i=0;i<sz;i++) {
-	  Rcpp::List demandpaths((SEXPREC*)demands[i]);
-	  int sz = demandpaths.size();
-	  paths[i].resize(sz);
-	  for(int j=0;j<sz;j++) {
-		paths[i][j]= Rcpp::as< std::vector<int> >(demandpaths[j]);
-	  }
-	}
-
-	std::vector< std::vector<double> > pathflows(paths.size());
-	for(int i=0;i<numD;i++) {
-	  pathflows[i] = std::vector<double>(paths[i].size(),0.0);
-	}
-
-	int doubleCount=0;
-	int phases=0;
-	int totalphases=0;
-
-	double delta = pow(double(M) / (1.0 - e),-1.0/e);
-	std::vector<double> vlengths(M);
-	for(int i=0;i<M;i++) {
-	  vlengths[i]=delta / vcapacity[i];
-	}
-
-	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
-	int updatepb = int(ceil(doubreq / 100.0));
-
-	double D=0.0;
-	for(int i=0;i<M;i++) {
-	  D+=vcapacity[i]*vlengths[i];
-	}
-	char cmd[256];
-	SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
-	ParseStatus status;
-
-	PROTECT(cmdsxp = allocVector(STRSXP,1));
-	int i=0;
-	int countgamma=0;
-	double bestgamma= -DBL_MAX;
-	std::vector<int> demand_index(numD);
-	for(int i=0; i<numD; i++) {
-	  demand_index[i]=i;
-	}
-	std::vector<int> bestpaths;
-
-#ifdef CONSTRAINEDDEMANDS
-	std::vector< std::pair<int,double> > constraints(numD);
-	for(int i=0;i<numD;i++) {
-	  constraints[i]=std::pair<int,double>(i,0.0);
-	}
-#endif
-
-	while( D < 1.0) {
-	  if(phases > doubreq) {
-		Rprintf("doubling!!\n");
-		for(int i=0;i<numD;i++) {
-		  vdemands[i] = vdemands[i] *2;
-		}
-		
-		phases = 0;
-	  }
-
-
-	  if(progress != false && totalphases % updatepb == 0) {
-		sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-		SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
-		cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-		for(int i = 0; i < length(cmdexpr); i++)
-		  ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
-		//Rprintf("D=%lg\n",D);
-		UNPROTECT(1);
-	  }
-	  
-	  std::vector<double> weights(M,0.0);
-	  bool underdemand=true;
-
-	  // note fix for random rotation of demand order
-#ifdef RANDOMDEMANDS
-	  random_shuffle(demand_index.begin(),demand_index.end());
-#endif
-
-#ifdef LOWESTFIRSTDEMANDS
-	  std::vector< std::pair<int,double> > pathcosts;
-	  for(int j=0; j<numD;j++) {
-		std::pair<int,double> pc = findshortestpathcost(paths[j],vlengths);
-		pathcosts.push_back(std::pair<int,double>(j,pc.second));
-	  }
-	  std::sort(pathcosts.begin(),pathcosts.end(),less_cost());
-	  for(int j=0; j<numD;j++,i++) {
-		demand_index[j]=pathcosts[j].first;
-	  }	  
-#endif
-
-#ifdef CONSTRAINEDDEMANDS
-	  std::sort(constraints.begin(),constraints.end(),great_cost());
-	  for(int j=0; j<numD;j++,i++) {
-		demand_index[j]=constraints[j].first;
-		//Rprintf("%ld,(%lg)",demand_index[j],constraints[j].second);
-	  }	  
-	  std::vector<double> constweights(M,0.0);
-
-	  //Rprintf("\n");
-#endif
-
-	  std::vector<int> pathrecord(numD);
-	  for(int j=0; j<numD;j++,i++) {
-		i= demand_index[j];
-		double demand = vdemands[i];
-		if(D >= 1.0)
-		  underdemand=false;
-		while( D < 1.0 && demand > 0.0) {
-		  int p = findshortestpath(paths[i],vlengths);
-		  pathrecord[i]=p;
-		  //find minium of demand or capacity on path
-		  double mincap=demand;
-		  double minfree=DBL_MAX;
-		  double smallestcap=0;
-		  ve=paths[i][p].end();
-		  for(vi=paths[i][p].begin(); vi != ve; vi++) {
-			if(mincap > vcapacity[*vi])
-			  mincap = vcapacity[*vi];
-			if(minfree > vcapacity[*vi] - demand) {
-			  minfree = vcapacity[*vi] - demand;
-			  smallestcap = vcapacity[*vi];
-			}
-			
-			if(calcgamma)
-			  weights[*vi] += origdemands[i];
-		  }
-		  if(mincap < demand) {
-			underdemand=false;
-			//Rprintf("underdemand\n");
-		  }
-#ifdef CONSTRAINEDDEMANDS
-		  constraints[i]=std::pair<int,double>(i,minfree/smallestcap);
-#endif
-		  demand -= mincap;
-		  int sz = paths[i][p].size();
-		  for(int k=0; k < sz; k++) {
-			double length = vlengths[paths[i][p][k]];
-			length = length * (1.0 + (e * mincap) /
-							   vcapacity[paths[i][p][k]]);
-			vlengths[paths[i][p][k]] = length;
-		  }
-		  pathflows[i][p] += mincap;
-		  D=0.0;
-		  for(int k=0;k<M;k++) {
-			D+=vcapacity[k]*vlengths[k];
-		  }
-		}
-	  }
-	  phases++;
-	  totalphases++;
-	  if(calcgamma && underdemand) {
-		double gamma = DBL_MAX;
-		for(int j=0; j< M; j++) {
-		  double tmp = 1.0 - weights[j]/vcapacity[j];
-		  if( gamma > tmp ) {
-			gamma = tmp;
-		  }
-		}
-		if(gamma >= intgamma * 0.9999999999) {
-		  countgamma++;
-		  //Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
-		}
-		if(gamma > bestgamma) {
-		  bestgamma = gamma;
-		  bestpaths = pathrecord;
-		  //Rprintf("bestgamma so far %lg\n",bestgamma);
-		  //Rprintf("best paths: ");
-		  //for(int j=0; j<numD; j++)
-		  //Rprintf("%d,",bestpaths[j]);
-		  //Rprintf("\n");
-		}
-	  }
-	  
-	}
-
-	UNPROTECT(1);
-	
-	Rcpp::List retlist;
-	retlist.push_back(totalphases,"totalphases");
-	retlist.push_back(countgamma,"countgamma");
-	retlist.push_back(bestgamma,"bestgamma");
-	retlist.push_back(bestpaths,"bestpaths");
-	retlist.push_back(pathflows,"pathflows");
-	retlist.push_back(vlengths,"vlengths");
-	return Rcpp::wrap(retlist);
-  }
 
   SEXP rg_max_concurrent_flow_capacity_restricted_c
   (
@@ -879,6 +654,550 @@ public:
 	retlist.push_back(vlengths,"vlengths");
 	return Rcpp::wrap(retlist);
   }
+
+  SEXP rg_fleischer_max_concurrent_flow_restricted_c
+  (
+   SEXP RRdemandpaths,
+   SEXP Rdemands,
+   SEXP Rcapacity,
+   SEXP Re,
+   SEXP Rprogress,
+   SEXP pb,
+   SEXP Rintgamma,
+   SEXP env
+   ) {
+
+	bool progress=Rcpp::as<bool>(Rprogress);
+	double e = Rcpp::as<double>(Re);
+	double intgamma = Rcpp::as<double>(Rintgamma);
+	bool calcgamma=false;
+	if(intgamma >=0) 
+	  calcgamma=true;
+	std::vector<double> vcapacity = RcppVector<double>(Rcapacity).stlVector();
+	std::vector<double> vdemands = RcppVector<double>(Rdemands).stlVector();
+	std::vector<double> origdemands(vdemands);	
+
+	int numD = vdemands.size();
+	std::vector<double>::iterator vecdit;
+	int M = vcapacity.size();
+	//decode Rdemandpaths into paths
+	std::vector<int>::iterator vi,ve;
+	std::vector< std::vector< std::vector<int> > > paths;
+	std::vector< std::vector< std::vector<int> > >::iterator dit;
+	std::vector< std::vector<int> >::iterator pit;
+	std::vector<int>::iterator eit;
+
+	Rcpp::List demands(RRdemandpaths);
+	int sz = demands.size();
+	paths.resize(sz);
+	for(int i=0;i<sz;i++) {
+	  Rcpp::List demandpaths((SEXPREC*)demands[i]);
+	  int sz = demandpaths.size();
+	  paths[i].resize(sz);
+	  for(int j=0;j<sz;j++) {
+		paths[i][j]= Rcpp::as< std::vector<int> >(demandpaths[j]);
+	  }
+	}
+
+	std::vector< std::vector<double> > pathflows(paths.size());
+	for(int i=0;i<numD;i++) {
+	  pathflows[i] = std::vector<double>(paths[i].size(),0.0);
+	}
+
+	int doubleCount=0;
+	int phases=0;
+	int totalphases=0;
+
+	double delta = pow(double(M) / (1.0 - e),-1.0/e);
+	std::vector<double> vlengths(M);
+	for(int i=0;i<M;i++) {
+	  vlengths[i]=delta / vcapacity[i];
+	}
+
+	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
+	int updatepb = int(ceil(doubreq / 100.0));
+
+	double D=0.0;
+	for(int i=0;i<M;i++) {
+	  D+=vcapacity[i]*vlengths[i];
+	}
+	char cmd[256];
+	SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
+	ParseStatus status;
+
+	PROTECT(cmdsxp = allocVector(STRSXP,1));
+	int i=0;
+	int countgamma=0;
+	double bestgamma= -DBL_MAX;
+	std::vector<int> demand_index(numD);
+	for(int i=0; i<numD; i++) {
+	  demand_index[i]=i;
+	}
+	std::vector<int> bestpaths;
+
+
+	while( D < 1.0) {
+	  if(phases > doubreq) {
+		Rprintf("doubling!!\n");
+		for(int i=0;i<numD;i++) {
+		  vdemands[i] = vdemands[i] *2;
+		}
+		
+		phases = 0;
+	  }
+
+
+	  if(progress != false && totalphases % updatepb == 0) {
+		sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
+		SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+		cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
+		for(int i = 0; i < length(cmdexpr); i++)
+		  ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+		//Rprintf("D=%lg\n",D);
+		UNPROTECT(1);
+	  }
+	  
+	  std::vector<double> weights(M,0.0);
+	  bool underdemand=true;
+
+	  // note fix for random rotation of demand order
+	  random_shuffle(demand_index.begin(),demand_index.end());
+
+	  std::vector<int> pathrecord(numD);
+	  for(int j=0; j<numD;j++,i++) {
+		i= demand_index[j];
+		double demand = vdemands[i];
+		if(D >= 1.0)
+		  underdemand=false;
+		while( D < 1.0 && demand > 0.0) {
+		  int p = findshortestpath(paths[i],vlengths);
+		  pathrecord[i]=p;
+		  //find minium of demand or capacity on path
+		  double mincap=demand;
+		  double minfree=DBL_MAX;
+		  double smallestcap=0;
+		  ve=paths[i][p].end();
+		  for(vi=paths[i][p].begin(); vi != ve; vi++) {
+			if(mincap > vcapacity[*vi])
+			  mincap = vcapacity[*vi];
+			if(minfree > vcapacity[*vi] - demand) {
+			  minfree = vcapacity[*vi] - demand;
+			  smallestcap = vcapacity[*vi];
+			}
+			
+			if(calcgamma)
+			  weights[*vi] += origdemands[i];
+		  }
+		  if(mincap < demand) {
+			underdemand=false;
+			//Rprintf("underdemand\n");
+		  }
+
+		  demand -= mincap;
+		  int sz = paths[i][p].size();
+		  for(int k=0; k < sz; k++) {
+			double length = vlengths[paths[i][p][k]];
+			length = length * (1.0 + (e * mincap) /
+							   vcapacity[paths[i][p][k]]);
+			vlengths[paths[i][p][k]] = length;
+		  }
+		  pathflows[i][p] += mincap;
+		  D=0.0;
+		  for(int k=0;k<M;k++) {
+			D+=vcapacity[k]*vlengths[k];
+		  }
+		}
+	  }
+	  phases++;
+	  totalphases++;
+	  if(calcgamma && underdemand) {
+		double gamma = DBL_MAX;
+		for(int j=0; j< M; j++) {
+		  double tmp = 1.0 - weights[j]/vcapacity[j];
+		  if( gamma > tmp ) {
+			gamma = tmp;
+		  }
+		}
+		if(gamma >= intgamma * 0.9999999999) {
+		  countgamma++;
+		  //Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
+		}
+		if(gamma > bestgamma) {
+		  bestgamma = gamma;
+		  bestpaths = pathrecord;
+		  //Rprintf("bestgamma so far %lg\n",bestgamma);
+		  //Rprintf("best paths: ");
+		  //for(int j=0; j<numD; j++)
+		  //Rprintf("%d,",bestpaths[j]);
+		  //Rprintf("\n");
+		}
+	  }
+	  
+	}
+
+	UNPROTECT(1);
+	
+	Rcpp::List retlist;
+	retlist.push_back(totalphases,"totalphases");
+	retlist.push_back(countgamma,"countgamma");
+	retlist.push_back(bestgamma,"bestgamma");
+	retlist.push_back(bestpaths,"bestpaths");
+	retlist.push_back(pathflows,"pathflows");
+	retlist.push_back(vlengths,"vlengths");
+	return Rcpp::wrap(retlist);
+  }
+
+  SEXP rg_max_concurrent_flow_int_c
+  (
+   SEXP RRdemandpaths,
+   SEXP Rdemands,
+   SEXP Rcapacity,
+   SEXP Re,
+   SEXP Rprogress,
+   SEXP pb,
+   SEXP Rintgamma,
+   SEXP env
+   ) {
+
+	bool progress=Rcpp::as<bool>(Rprogress);
+	double e = Rcpp::as<double>(Re);
+	double intgamma = Rcpp::as<double>(Rintgamma);
+	bool calcgamma=false;
+	if(intgamma >=0) 
+	  calcgamma=true;
+	std::vector<double> vcapacity = RcppVector<double>(Rcapacity).stlVector();
+	std::vector<double> vdemands = RcppVector<double>(Rdemands).stlVector();
+	std::vector<double> origdemands(vdemands);	
+
+	int numD = vdemands.size();
+	std::vector<double>::iterator vecdit;
+	int M = vcapacity.size();
+	//decode Rdemandpaths into paths
+	std::vector<int>::iterator vi,ve;
+	std::vector< std::vector< std::vector<int> > > paths;
+	std::vector< std::vector< std::vector<int> > >::iterator dit;
+	std::vector< std::vector<int> >::iterator pit;
+	std::vector<int>::iterator eit;
+
+	Rcpp::List demands(RRdemandpaths);
+	int sz = demands.size();
+	paths.resize(sz);
+	for(int i=0;i<sz;i++) {
+	  Rcpp::List demandpaths((SEXPREC*)demands[i]);
+	  int sz = demandpaths.size();
+	  paths[i].resize(sz);
+	  for(int j=0;j<sz;j++) {
+		paths[i][j]= Rcpp::as< std::vector<int> >(demandpaths[j]);
+	  }
+	}
+
+	std::vector< std::vector<double> > pathflows(paths.size());
+	for(int i=0;i<numD;i++) {
+	  pathflows[i] = std::vector<double>(paths[i].size(),0.0);
+	}
+
+	int doubleCount=0;
+	int phases=0;
+	int totalphases=0;
+
+	double delta = pow(double(M) / (1.0 - e),-1.0/e);
+	std::vector< std::vector<double> > dlengths(numD);
+	for(int j=0; j<numD; j++) {
+	  dlengths[j]=std::vector<double>(M);
+	  for(int i=0;i<M;i++) {
+		dlengths[j][i]=delta / vcapacity[j];
+	  }
+	}
+	std::vector< std::vector<double> > dlengths2(numD);
+	for(int j=0; j<numD; j++) {
+	  dlengths2[j]=std::vector<double>(M);
+	  for(int i=0;i<M;i++) {
+		dlengths2[j][i]=delta / vcapacity[j];
+	  }
+	}
+
+	std::vector<double> vlengths(M);
+	for(int i=0;i<M;i++) {
+	  vlengths[i]=delta / vcapacity[i];
+	}
+
+	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
+	int updatepb = int(ceil(doubreq / 100.0));
+
+	double D=0.0;
+	for(int i=0;i<M;i++) {
+	  D+=vcapacity[i]*vlengths[i];
+	}
+	char cmd[256];
+	SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
+	ParseStatus status;
+
+	PROTECT(cmdsxp = allocVector(STRSXP,1));
+	int i=0;
+	int countgamma=0;
+	double bestgamma= -DBL_MAX;
+	std::vector<int> demand_index(numD);
+	for(int i=0; i<numD; i++) {
+	  demand_index[i]=i;
+	}
+	std::vector<int> bestpaths;
+	bool gammanormal=true;
+	bool gammaindividual=true;
+
+	while( D < 1.0) {
+	  if(phases > doubreq) {
+		Rprintf("doubling!!\n");
+		for(int i=0;i<numD;i++) {
+		  vdemands[i] = vdemands[i] *2;
+		}
+		
+		phases = 0;
+	  }
+
+
+	  if(progress != false && totalphases % updatepb == 0) {
+		sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
+		SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+		cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
+		for(int i = 0; i < length(cmdexpr); i++)
+		  ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+		//Rprintf("D=%lg\n",D);
+		UNPROTECT(1);
+	  }
+	  
+	  bool underdemand=true;
+
+	  // note fix for random rotation of demand order
+	  random_shuffle(demand_index.begin(),demand_index.end());
+
+	  std::vector<int> pathrecord(numD);
+	  std::vector<int> pathrecord2(numD);
+	  std::vector<double> weights(M,0.0);
+	  std::vector<double> weights2(M,0.0);
+	  std::vector<double> weightsrec(M,0.0);
+	  std::vector<double> weightsrec2(M,0.0);
+
+	  for(int j=0; j<numD;j++,i++) {
+		i= demand_index[j];
+		double demand = vdemands[i];
+		if(D >= 1.0)
+		  underdemand=false;
+		bool onlyfirst=true;
+		while( D < 1.0 && demand > 0.0) {
+		  int p = findshortestpath(paths[i],vlengths);
+		  //find minium of demand or capacity on path
+		  double mincap=demand;
+		  ve=paths[i][p].end();
+		  for(vi=paths[i][p].begin(); vi != ve; vi++) {
+			if(mincap > vcapacity[*vi])
+			  mincap = vcapacity[*vi];
+		  }
+		  if(mincap < demand) {
+			//onlyfirst=false;
+			//underdemand=false;
+			//Rprintf("underdemand\n");
+		  }
+
+		  demand -= mincap;
+		  int sz = paths[i][p].size();
+		  for(int k=0; k < sz; k++) {
+			double length = vlengths[paths[i][p][k]];
+			length *= (1.0 + (e * mincap) /
+					   vcapacity[paths[i][p][k]]);
+			vlengths[paths[i][p][k]] = length;
+		  }
+
+
+		  // New
+		  if(onlyfirst) {
+			if(gammanormal) {
+			  int pd = findshortestpath(paths[i],dlengths2[i]);
+			  
+			  pathrecord2[i]=pd;
+			  double mincap=vdemands[i];
+			  double minfree=DBL_MAX;
+			  double smallestcap=0;
+			  ve=paths[i][pd].end();
+			  for(vi=paths[i][pd].begin(); vi != ve; vi++) {
+				weights2[*vi] += vdemands[i];
+				if(mincap > vcapacity[*vi])
+				  mincap = vcapacity[*vi];
+				
+				if(minfree > vcapacity[*vi] - weights2[*vi]) {
+				  minfree = vcapacity[*vi] - weights2[*vi];
+				}
+			  }
+			  
+			  sz = paths[i][pd].size();
+			  for(int l=0; l<numD;l++) {
+				for(int k=0; k < sz; k++) {
+				  double dlength = dlengths2[l][paths[i][pd][k]];
+				  dlength *= (1.0 + (e * (mincap)) /
+							  vcapacity[paths[i][pd][k]]);
+				  dlengths2[l][paths[i][pd][k]] = dlength;
+				}
+			  }
+			}
+			
+			if(gammaindividual) {
+			  int pd = findshortestpath(paths[i],dlengths[i]);
+			
+			  pathrecord[i]=pd;
+			  double mincap=vdemands[i];
+			  double minfree=DBL_MAX;
+			  double smallestcap=0;
+			  ve=paths[i][pd].end();
+			  for(vi=paths[i][pd].begin(); vi != ve; vi++) {
+				weights[*vi] += vdemands[i];
+				if(mincap > vcapacity[*vi])
+				  mincap = vcapacity[*vi];
+				
+				if(minfree > vcapacity[*vi] - weights[*vi]) {
+				  minfree = vcapacity[*vi] - weights[*vi];
+				}
+			  }
+			  
+			// First update lengths as normal G&K algorithm
+			  sz = paths[i][pd].size();
+			  for(int l=0; l<numD;l++) {
+				for(int k=0; k < sz; k++) {
+				  double dlength = dlengths[l][paths[i][pd][k]];
+				  dlength *= (1.0 + (e * (mincap)) /
+							  vcapacity[paths[i][pd][k]]);
+				  dlengths[l][paths[i][pd][k]] = dlength;
+				}
+			  }
+			  
+			  // then update just the length set for this demand 
+			  // to allow for congested flow
+			  bool newupdate = true;
+			  if(newupdate==true) {
+				int l=i;
+				for(int k=0; k < sz; k++) {
+				  double dlength = dlengths[l][paths[i][pd][k]];
+				  //if( (vcapacity[paths[i][pd][k]] - weights [paths[i][pd][k]] )
+				  //	< 0) {
+				  if(minfree < 0) {
+					
+					double val = weights [paths[i][pd][k]] - vcapacity[paths[i][pd][k]];
+					// Rprintf("val=%lg\n",val);
+					dlength *= (1.0 + (e * (mincap)) /
+								vcapacity[paths[i][pd][k]]);
+					dlengths[l][paths[i][pd][k]] = dlength;
+				  }
+				}
+			  }
+			}
+		  }
+		  //end New
+		  ///!!!! this needs to move earlier???
+		  pathflows[i][p] += mincap;
+		  D=0.0;
+		  for(int k=0;k<M;k++) {
+			D+=vcapacity[k]*vlengths[k];
+		  }
+		}
+	  }
+	  // this is just used to calculate gamma
+
+
+	  std::vector<double> gweights(M,0.0);
+	  if(gammaindividual) {
+
+		for(int j=0; j<numD;j++) {
+		  i= demand_index[j];
+		  ve=paths[i][pathrecord[i]].end();
+		  for(vi=paths[i][pathrecord[i]].begin(); vi != ve; vi++) {
+			/*
+			  if(minfree > vcapacity[*vi] - demand) {
+			  minfree = vcapacity[*vi] - demand;
+			  smallestcap = vcapacity[*vi];
+			  }*/
+			gweights[*vi] += origdemands[i];
+		  }
+		}
+	  }	  
+
+	  std::vector<double> gweights2(M,0.0);	  
+	  if(gammanormal) {
+
+		for(int j=0; j<numD;j++) {
+		  i= demand_index[j];
+		  ve=paths[i][pathrecord2[i]].end();
+		  for(vi=paths[i][pathrecord2[i]].begin(); vi != ve; vi++) {
+			/*
+			  if(minfree > vcapacity[*vi] - demand) {
+			  minfree = vcapacity[*vi] - demand;
+			  smallestcap = vcapacity[*vi];
+			  }*/
+			gweights2[*vi] += origdemands[i];
+		  }
+		}
+	  }	  
+	  
+	  phases++;
+	  totalphases++;
+	  if(calcgamma && underdemand) {
+		double gamma = DBL_MAX;
+		double gamma2 = DBL_MAX;
+		if(gammaindividual) {
+		  for(int j=0; j< M; j++) {
+			double tmp = 1.0 - gweights[j]/vcapacity[j];
+			if( gamma > tmp ) {
+			  gamma = tmp;
+			}
+		  }
+		  if(gamma > bestgamma) {
+			bestgamma = gamma;
+			bestpaths = pathrecord;
+			//Rprintf("bestgamma so far %lg\n",bestgamma);
+			//Rprintf("best paths: ");
+			//for(int j=0; j<numD; j++)
+			//Rprintf("%d,",bestpaths[j]);
+			//Rprintf("\n");
+		  }
+		  
+		}
+		if(gammanormal) {
+		  for(int j=0; j< M; j++) {
+			double tmp = 1.0 - gweights2[j]/vcapacity[j];
+			if( gamma2 > tmp ) {
+			  gamma2 = tmp;
+			}
+		  }
+		  if(gamma2 > bestgamma) {
+			bestgamma = gamma2;
+			bestpaths = pathrecord2;
+			//Rprintf("bestgamma so far %lg\n",bestgamma);
+			//Rprintf("best paths: ");
+			//for(int j=0; j<numD; j++)
+			//Rprintf("%d,",bestpaths[j]);
+			//Rprintf("\n");
+		  }
+		  
+		}
+		if(gamma2 >= intgamma * 0.9999999999 || 
+		   gamma >= intgamma * 0.9999999999 ) {
+		  countgamma++;
+		  //Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
+		}
+		
+	  }
+	  
+	}
+	
+	UNPROTECT(1);
+	
+	Rcpp::List retlist;
+	retlist.push_back(totalphases,"totalphases");
+	retlist.push_back(countgamma,"countgamma");
+	retlist.push_back(bestgamma,"bestgamma");
+	retlist.push_back(bestpaths,"bestpaths");
+	retlist.push_back(pathflows,"pathflows");
+	retlist.push_back(vlengths,"vlengths");
+	return Rcpp::wrap(retlist);
+  }
+
 
 
 }

@@ -943,7 +943,8 @@ public:
 	std::vector<int> bestpaths;
 	bool gammanormal=true;
 	bool gammaindividual=true;
-
+	std::vector<int> countunderv(1);
+	countunderv[0]=0;
 	while( D < 1.0) {
 	  if(phases > doubreq) {
 		Rprintf("doubling!!\n");
@@ -983,6 +984,7 @@ public:
 		if(D >= 1.0)
 		  underdemand=false;
 		bool onlyfirst=true;
+		int countunder=0;
 		while( D < 1.0 && demand > 0.0) {
 		  int p = findshortestpath(paths[i],vlengths);
 		  //find minium of demand or capacity on path
@@ -991,11 +993,6 @@ public:
 		  for(vi=paths[i][p].begin(); vi != ve; vi++) {
 			if(mincap > vcapacity[*vi])
 			  mincap = vcapacity[*vi];
-		  }
-		  if(mincap < demand) {
-			//onlyfirst=false;
-			//underdemand=false;
-			//Rprintf("underdemand\n");
 		  }
 
 		  demand -= mincap;
@@ -1009,7 +1006,14 @@ public:
 
 
 		  // New
-		  if(onlyfirst) {
+		  if(demand > 0.0) {
+			countunder++;
+		  } else {
+			if(mincap < demand) {
+			  //onlyfirst=false;
+			  //underdemand=false;
+			  //Rprintf("underdemand\n");
+			}
 			if(gammanormal) {
 			  int pd = findshortestpath(paths[i],dlengths2[i]);
 			  
@@ -1046,19 +1050,29 @@ public:
 			  double mincap=vdemands[i];
 			  double minfree=DBL_MAX;
 			  double smallestcap=0;
+			  double penalty=0;
 			  ve=paths[i][pd].end();
 			  for(vi=paths[i][pd].begin(); vi != ve; vi++) {
-				weights[*vi] += vdemands[i];
 				if(mincap > vcapacity[*vi])
 				  mincap = vcapacity[*vi];
 				
-				if(minfree > vcapacity[*vi] - weights[*vi]) {
-				  minfree = vcapacity[*vi] - weights[*vi];
+				if(minfree > vcapacity[*vi] - weights[*vi] - vdemands[i]) {
+				  minfree = vcapacity[*vi] - weights[*vi] - vdemands[i];
+				  if(minfree < 0) {
+					penalty=mincap;
+					minfree=0;
+				  }	
 				}
+			  }
+			  ve=paths[i][pd].end();
+			  for(vi=paths[i][pd].begin(); vi != ve; vi++) {
+				weights[*vi] += vdemands[i];//minfree;
 			  }
 			  
 			// First update lengths as normal G&K algorithm
+			  
 			  sz = paths[i][pd].size();
+			  
 			  for(int l=0; l<numD;l++) {
 				for(int k=0; k < sz; k++) {
 				  double dlength = dlengths[l][paths[i][pd][k]];
@@ -1067,7 +1081,7 @@ public:
 				  dlengths[l][paths[i][pd][k]] = dlength;
 				}
 			  }
-			  
+
 			  // then update just the length set for this demand 
 			  // to allow for congested flow
 			  bool newupdate = true;
@@ -1077,11 +1091,11 @@ public:
 				  double dlength = dlengths[l][paths[i][pd][k]];
 				  //if( (vcapacity[paths[i][pd][k]] - weights [paths[i][pd][k]] )
 				  //	< 0) {
-				  if(minfree < 0) {
+				  if(minfree == 0) {
 					
 					double val = weights [paths[i][pd][k]] - vcapacity[paths[i][pd][k]];
 					// Rprintf("val=%lg\n",val);
-					dlength *= (1.0 + (e * (mincap)) /
+					dlength *= (1.0 + (e * (penalty)) /
 								vcapacity[paths[i][pd][k]]);
 					dlengths[l][paths[i][pd][k]] = dlength;
 				  }
@@ -1097,9 +1111,13 @@ public:
 			D+=vcapacity[k]*vlengths[k];
 		  }
 		}
+		if(countunderv.size() < countunder+1) {
+		  countunderv.resize(countunder+1);
+		}
+		countunderv[countunder]++;
+			
 	  }
 	  // this is just used to calculate gamma
-
 
 	  std::vector<double> gweights(M,0.0);
 	  if(gammaindividual) {
@@ -1176,6 +1194,12 @@ public:
 		  }
 		  
 		}
+		if(gamma2 >= intgamma * 0.9999999999) {
+		  Rprintf("n");
+		}
+		if(gamma >= intgamma * 0.9999999999) {
+		  Rprintf("i");
+		}
 		if(gamma2 >= intgamma * 0.9999999999 || 
 		   gamma >= intgamma * 0.9999999999 ) {
 		  countgamma++;
@@ -1183,8 +1207,14 @@ public:
 		}
 		
 	  }
-	  
+
 	}
+
+	Rprintf("\n");
+	for(i=0;i<countunderv.size();i++) {
+	  Rprintf("%ld,",countunderv[i]);
+	}
+	Rprintf("\n");
 	
 	UNPROTECT(1);
 	

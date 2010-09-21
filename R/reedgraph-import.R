@@ -1,4 +1,4 @@
-require("igraph")
+require("igraph",quietly=TRUE)
 
 ### read brite format file
 ### result igraph
@@ -71,4 +71,22 @@ rgimportbrite <- function(file) {
   E(g)$weight <- 1.0
 
   g
+}
+
+rg.write.graphNEL <- function(g,layout=NULL,fileprefix=NULL) {
+  gi <- igraph.from.graphNEL(g)
+  gfile <- paste(fileprefix,".graph.gml",sep="")
+  lfile <- paste(fileprefix,".layout.rtb",sep="")
+  write.graph(gi,gfile,format="graphml")
+  write.table(layout,lfile)
+}
+
+
+rg.read.graphNEL <- function(fileprefix=NULL) {
+  gfile <- paste(fileprefix,".graph.gml",sep="")
+  lfile <- paste(fileprefix,".layout.rtb",sep="")
+  layout <- read.table(lfile)
+  graph <- read.graph(gfile,format="graphml")
+  graph <- igraph.to.graphNEL(graph)
+  ret <- list(layout=layout,graph=graph)
 }

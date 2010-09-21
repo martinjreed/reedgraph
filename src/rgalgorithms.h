@@ -1,3 +1,4 @@
+// mjreed
 #include <algorithm>
 #include "RBGL.hpp"
 #include "Rcpp.h"

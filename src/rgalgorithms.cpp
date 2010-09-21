@@ -1,4 +1,4 @@
-//
+// mjreed
 
 #include "rgalgorithms.h"
 

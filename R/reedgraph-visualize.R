@@ -1,6 +1,83 @@
+require(tcltk,quietly=TRUE)
+require(igraph,quietly=TRUE)
+require("graph",quietly=TRUE,warn.conflicts=FALSE)
 
-require(igraph)
-require(tcltk)
+
+rg.show.paths <- function(demands,numlist=NULL) {
+  num <- 0
+  if(is.null(numlist))
+    numlist <- seq(1,length(demands))
+  for(i in numlist){
+    for(p in names(demands[[i]]$paths)) {
+      cat(i,": ",p,": ",demands[[i]]$paths[[p]],"\n")
+      num <- num + 1
+    }
+  }
+  cat("total number of paths is ",num,"\n")
+}
+
+setClass("rgGraph",
+         representation(layout="matrix"
+                        ),
+         contains="graphNEL")
+
+setGeneric("layout",
+           function(this,...)
+           standardGeneric("layout"))
+setGeneric("layout<-",
+           function(this,...)
+           standardGeneric("layout<-"))
+
+
+setMethod("layout",
+          signature("rgGraph"),
+          function(this) {
+            return (this@layout)
+          })
+
+setReplaceMethod("layout",
+          signature("rgGraph"),
+          function(this,value) {
+            this@layout <- value
+            this
+          })
+
+createLayout <- function(graph) {
+    gi <- igraph.from.graphNEL(graph)
+    layout <- layout.fruchterman.reingold(gi)
+    return(layout)
+}
+
+setMethod("show",
+          signature("rgGraph"),
+          function(object) {
+            cat("rgGraph containing:\n")
+            show(as(object,"graphNEL"))
+          })
+
+setMethod("plot",
+          signature(x="rgGraph"),
+          function(x,y,width=800,height=800,
+                   margin=0.1,edgeweights=NULL,layout=NULL,...) {
+            graph <- as(x,"graphNEL")
+            print(identical(attr(x@layout,"dim"),
+                           as.integer(c(length(nodes(x)),2))))
+            if ( identical(attr(x@layout,"dim"),
+                           as.integer(c(length(nodes(x)),2)))) {
+              layout <- x@layout
+            } else {
+              gi <- igraph.from.graphNEL(graph)
+              layout <- layout.fruchterman.reingold(gi)
+              x@layout <- layout
+              show(layout)
+              show(x@layout)
+            }
+            plot(graph,width=width,height=height,margin=0.1,
+                 edgeweights=edgeweights,layout=layout)
+          })
+
+
+
 
 ### Plot directed igraph using tcltk
 ### args (with defaults if not given)
@@ -8,45 +85,49 @@ require(tcltk)
 ### width=800
 ### height=800
 ### margin=0.1 (portion of window to leave as a margin)
-### vertexattr=NULL (if vector or list each element will be displayed in tooltip)
-### edgeattr=NULL (as for vertexattr but displays edges)
+### edgedata vector of same length as the number of edges
+###          this will be used as the edge color data
 
-rgplot <- function(graph,width=800,height=800,margin=0.1,vertexattr=NULL,edgeattr=NULL,layout=NULL) {
-
+plot.graphNEL <- function(x,y,width=800,height=800,
+                          margin=0.1,edgeweights=NULL,layout=NULL,...) {
+  graph <- x
+  if ( match("graphNEL",class(graph),nomatch=0) == 0 ) {
+    print("Error in rgGraph@plot: graph is not class graphNEL")
+    return(NULL)
+  }
+  
+  if ( is.null(layout) ) {
+    gi <- igraph.from.graphNEL(graph)
+    layout <- layout.fruchterman.reingold(gi)
+  }
+  
+  edgecolours <- c("black",
+                   "grey",
+                   "brown",
+                   "orchid",
+                   "violet",
+                   "purple",
+                   "blue",
+                   "cyan",
+                   "aquamarine",
+                   "seagreen3",
+                   "green",
+                   "yellowgreen",
+                   "greenyellow",
+                   "yellow",
+                   "gold",
+                   "orange",
+                   "red")
 
   valtocolour <- function(val,min,max) {
-    edgecolours <- c("black",
-                     "grey",
-                     "brown",
-                     "orchid",
-                     "violet",
-                     "purple",
-                     "blue",
-                     "cyan",
-                     "aquamarine",
-                     "seagreen3",
-                     "green",
-                     "yellowgreen",
-                     "greenyellow",
-                     "yellow",
-                     "gold",
-                     "orange",
-                     "red")
     if ( (max-min == 0) ) {
       index <- 1
     } else {
-      index <- val * (length(edgecolours) -1 ) / (max - min) + 1
+      index <- floor((val - min) * (length(edgecolours) -1 ) / (max - min) + 1)
     }
     return(edgecolours[index])
   }
   
-  if ( is.igraph(graph) ) {
-    if ( is.null(layout) )
-      layout <- get.graph.attribute(graph,"layout")
-  } else {
-    graph <- igraph.from.graphNEL(graph)
-  }
-      
   xrange <- ( max(layout[,2]) - min(layout[,2]) ) * 
     ( 1 + 2 * margin )
   yrange <- ( max(layout[,1]) - min(layout[,1]) ) * 
@@ -66,40 +147,79 @@ rgplot <- function(graph,width=800,height=800,margin=0.1,vertexattr=NULL,edgeatt
 
   tkpack(tkcan)
 
-  edgeweights = get.edge.attribute(graph,"weight")
-  minedgew = min(edgeweights)
-  maxedgew = max(edgeweights)
+  em <- edgeMatrix(graph)
+  numedges <- length(rg.edgeL(graph))
   
+  at <- names(edgeData(graph)[[1]])
+
+  ew <- NULL
+  if( is.null(edgeweights)) {
+    if ( match("weight",at,nomatch=0 )) {
+      ew <- as.double(edgeData(graph,attr="weight"))
+    } else {
+      ew <- rep(1.0, times=numedges)
+    }
+  } else {
+    ew <- edgeweights
+  }
+  minedgew = min(ew)
+  cat("minedgew ",minedgew,"\n")
+  maxedgew = max(ew)
+  cat("maxedgew ",maxedgew,"\n")
+  
+  
+  ## draw key
+  keyframe <- tkframe(tkcan)
+  numedgecolours <- length(edgecolours)
+  i <- minedgew
+  increment <- (maxedgew - minedgew) /(length(edgecolours)-1)
+  for( color in edgecolours) {
+    val <- format(i,digit=2)
+    fr <- tkframe(keyframe,background=color,width=50,heigh=2)
+    lb <- tklabel(keyframe,text=val)
+    tkgrid(fr,lb)
+    i <- i + increment
+  }
+
+  tkcreate(tkcan,"window",0,0,anchor="nw",window=keyframe)
   ## do edges
-  for (i in E(graph)) {
-    v1 <- get.edge(graph,i)[1]
-    v2 <- get.edge(graph,i)[2]
-
-    x1 <- (layout[v1+1,2] - minx) * xscale
-    x2 <- (layout[v2+1,2] - minx) * xscale
-    y1 <- (layout[v1+1,1] - miny) * yscale
-    y2 <- (layout[v2+1,1] - miny) * yscale
-
+  icount <- 1
+  for (i in rg.edgeL(graph)) {
+    v1 <- as.integer(i[1])
+    v2 <- as.integer(i[2])
+    
+    x1 <- (layout[v1,2] - minx) * xscale
+    x2 <- (layout[v2,2] - minx) * xscale
+    y1 <- (layout[v1,1] - miny) * yscale
+    y2 <- (layout[v2,1] - miny) * yscale
+    
     theta <- atan( (y2-y1) / (x2-x1) )
-
+    
     dy <- abs ( 7 * sin(theta) )
-
+    
     dx <- abs ( 7 * cos(theta) )
-
+    
     x2 <- x1 + (x2-x1)/2 + sign(x1-x2) * dx / 3.0
     y2 <- y1 + (y2-y1)/2 + sign(y1-y2) * dy / 3.0
-
+    
     x1 <- x1 - sign(x1-x2) * dx
     y1 <- y1 - sign(y1-y2) * dy
-
-    text=c("E=",i)
+    
+    text=paste("E=",paste(i,collapse="-"),sep="")
     colour="black"
-    if ( ! is.null(E(graph)[i]$weight) ) {
-      text=c(text,",",E(graph)[i]$weight)
-      colour=valtocolour(E(graph)[i]$weight,minedgew, maxedgew)
+    
+    
+    for(n in at){
+      text <- paste(text," ",n,"=",
+                    format(edgeData(graph,from=i[1],to=i[2])[[1]][[n]],digit=3),
+                    ", ",sep="",collapse="")
     }
-    if ( ! is.null(edgeattr[i] ) ){
-      text=c(text,",",edgeattr[i]) } 
+    ##weight <- edgeData(graph,from=i[1],to=i[2],attr="weight")
+    if( !is.null(edgeweights)) {
+      text <- paste(text," inw=",format(ew[icount],digit=3),sep="",collapse="")
+    }
+    weight <- ew[icount]
+    colour=valtocolour(as.double(weight),minedgew, maxedgew)
     
     tag <- tkcreate(tkcan,"line",x1,y1,x2,y2,fill=colour,width=2)
     tkitembind(tkcan,tag,"<Enter>",eval(substitute(function(x="%x",y="%y") {
@@ -111,26 +231,24 @@ rgplot <- function(graph,width=800,height=800,margin=0.1,vertexattr=NULL,edgeatt
     tkitembind(tkcan,tag,"<Leave>",eval(substitute(function(x="%x",y="%y") {
       tkdelete(tkcan,"tooltip")
     })))
+    icount <- icount +1
   }
 
 
   ## do vertices
-  for (i in V(graph)) {
-    xpos <- (layout[i+1,2] - minx) * xscale
+  for (i in as.integer(nodes(graph))) {
+    xpos <- (layout[i,2] - minx) * xscale
     
-    ypos <- (layout[i+1,1] - miny) * yscale
-    #tag <- tkcreate(tkcan,"oval",xpos-5,ypos-5,xpos+5,ypos+5,fill="blue",width="2")
+    ypos <- (layout[i,1] - miny) * yscale
+                                        #tag <- tkcreate(tkcan,"oval",xpos-5,ypos-5,xpos+5,ypos+5,fill="blue",width="2")
     ## substitute is necessary to replace the value of i each time a new inner
     ## function is created. Then this has to be actually evaluated!
 
-    nodelab <- tkcreate(tkcan,"text",xpos,ypos,text=V(graph)[i]$name)
+    nodelab <- tkcreate(tkcan,"text",xpos,ypos,text=as.character(i))
     nodelabbk <- tkcreate(tkcan,"rectangle",tkbbox(tkcan,nodelab),fill="white")
     tkitemlower(tkcan,nodelabbk,nodelab)
 
-    if ( ! is.null(vertexattr[i] ) ){
-      text=c("V=",V(graph)[i]$name,",",vertexattr[i]) } else {
-        text=c("V=",V(graph)[i]$name)
-      }
+    text=paste("V=",as.character(i),sep="")
     
     tkitembind(tkcan,nodelab,"<Enter>",eval(substitute(function(x="%x",y="%y") {
       tkdelete(tkcan,"tooltip")
@@ -145,8 +263,8 @@ rgplot <- function(graph,width=800,height=800,margin=0.1,vertexattr=NULL,edgeatt
     })))
     
   }
-
   tktop
 }
 
-
+setMethod("plot",
+          signature(x="graphNEL"),plot.graphNEL)

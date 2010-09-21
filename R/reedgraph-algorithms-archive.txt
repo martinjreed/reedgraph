@@ -1,0 +1,325 @@
+### test the rg.try.max function across many graphs/demands seems to
+### show that res$ilbound <= res$gamma <= res$ilbound*(1+w) in other
+### words we do not need to run rg.try.max but simply run MCF and then
+### set flows to the demand! Needs prooving. Now proved, can delete this code?
+rg.test.ga.idea <- function() {
+
+
+  run <- 1
+
+  while(run < 50) {
+    n <- floor(runif(1,10,30))
+    
+    nd <- floor(runif(1,10,100))
+    
+    e <- runif(1,0.005,0.05)
+    
+    g <- rg.generate.random.graph(n)
+    edgeDataDefaults(g,"capacity") <- 1.0
+    fromlist <- as.character(edgeMatrix(g)[1,])
+    m <- length(fromlist)
+    tolist <- as.character(edgeMatrix(g)[2,])
+    
+    
+    edgeData(g,from=fromlist,to=tolist,attr="capacity") <- runif(m,3,20)
+    dem <- rg.gen.demands(g,nd,runif(nd,0.5,5))
+    
+    ## find the demension of the demand flow (use lambda to work this out
+    respre <- rg.max.concurrent.flow.prescaled(g,dem,e=e,updateflow=FALSE)
+    
+    for(fi in seq(1:5) ) {
+      scalef <- fi/5
+      save(list=ls(all=TRUE),file="rg.test.idea1.robj")
+      dems <- rg.rescale.demands(dem,scalef*respre$lambda * 0.9)
+      save(list=ls(all=TRUE),file="rg.test.idea2.robj")
+      res <- rg.integer.min.congestion.flow.ga(g,dems,e=e)
+      cat("lambda =",res$splitflow$lambda,"\n")
+      cat("gamma =",res$splitflow$gamma,"\n")
+      cat("val =",1-res$val,"\n")
+      filename <- paste("run",run,"n",n,"nd",nd,"fi",fi,"e",e,".robj",sep="")
+      run <- run + 1
+      save(res,file=filename)
+    }
+    
+  }  
+    
+    res
+}
+
+
+## can delete this now
+rg.test.idea.stats.old <- function() {
+  files <- Sys.glob("~/tmp/run[0-9]*")
+  files <- files[order(as.numeric(gsub("^.*run([0-9]*).*$","\\1",files,files)))]
+  for(file in files) {
+    load(file)
+    print(file)
+    e <- res$e
+    mingap <- (1-e)^(-3)
+    if( res$gamma !=0 && is.numeric(res$gamma) && is.numeric(res$ilbound)) {
+      if( res$gamma >= res$ilbound && res$gamma <= res$ilbound*mingap) {
+        gamma <- rg.mcf.find.gamma(res$resmcf$gflow,res$resmcf$lambda)
+        cat(res$gamma,gamma,1- 1/res$mcflambda,"\n")
+        if(res$gamma > gamma )
+          print("Warning congecture false! res$gamma > gamma  ")
+        if(gamma < 1- 1/res$mcflambda ) {
+          print("Warning lambda is not a lower limit")
+        }
+        caplimit <- FALSE
+        for(d in names(res$demands)) {
+          for(p in names(res$demands[[d]]$paths)) {
+            pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+            fromlist <- pv[1:length(pv)-1]
+            tolist <- pv[2:length(pv)]
+            mincap <- min(as.double(edgeData(res$gflow,from=fromlist,to=tolist,att="capacity")))
+            if(res$demands[[d]]$demand > mincap) {
+              caplimit <- TRUE
+            }
+
+          }
+        }
+        if(caplimit)
+          print("Capacity limited!")
+      } else {
+        cat("FALSE",res$gamma,res$ilbound,res$ilbound*mingap,"\n")
+      }
+    }
+  }
+}
+
+
+rg.find.demand.paths <- function(demands,source=NULL,sink=NULL,edge=FALSE) {
+
+  res <- list()
+  if(edge) {
+    mtext <- paste("(\\||^)",source,"\\|",sink,"(\\||$)",sep="")
+  } else {
+    mtext <- paste("(\\||^)",source,"(\\|.*\\|)|(\\|)",sink,"(\\||$)",sep="")
+  }
+  
+  
+  for(n in names(demands)) {
+    for(p in names(demands[[n]]$paths)) {
+#      cat("looking in demand ",n,p,"\n")
+      if(regexpr(mtext,p) != -1) {
+#        print("found")
+        if( ! (n %in% names(res)) )
+          {
+            res[[n]] <- list()
+            res[[n]]$source <- demands[[n]]$source
+            res[[n]]$sink <- demands[[n]]$sink
+            res[[n]]$demand <- demands[[n]]$demand
+            res[[n]]$paths <- list()
+          }
+        res[[n]]$paths[[p]] <- demands[[n]]$paths[[p]]
+      } 
+    }
+  }
+  res
+}
+
+## Wrote to check that the MCF was also the solution to
+## the max concurrent commodity flow. In all test
+## cases it worked
+rg.try.max <- function(g,demands,e=0.1,progress=FALSE) {
+
+  # lets try to route gamma times capacity on each edge
+  # maximise gamma
+  
+  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress)
+  resmcf <- res
+  mcflambda <- res$lambda
+  maxlambda <- res$beta
+
+  if ( res$lambda < 1.0 ) {
+    res$gamma <- 0
+    return(res)
+  }
+
+  mingap <- (1-e)^(-3)
+
+
+  # need better estimates of these, my guess is that a reasonable lower
+  # lower bound on gamma is (from basic MCF)
+  # min ( ( c_e - f_e / lambda )/ c_e )
+  # as we can do this well, but might do better
+  edgeflows <- (as.double(edgeData(res$gflow,attr="weight"))) 
+  capacities <- as.double(edgeData(res$gflow,attr="capacity"))
+  lbound <- min ( (capacities - edgeflows/res$lambda) / capacities)
+
+  lbound <- lbound / mingap
+  ilbound <- lbound
+
+#  lbound <- 0.0
+  
+  # a maximum bound is when the smallest flow goes over the maximum capacity path
+  # below is a bad estimate of this
+
+  demval <- as.double(lapply(demands,"[[","demand"))
+
+  ubound <- ( max(capacities) - min(demval) )/ max(capacities)
+
+  # now try to find it by iteratively searching for best gamma
+
+  boundgap <- ubound / lbound
+
+
+  lambda <- 0.0
+  resaug <- list()
+  while ( boundgap > mingap ) {
+    boundgap <- ubound/lbound
+    gamma <- (ubound - lbound) /2 + lbound
+      ## augment demands
+    demaug <- demands
+    ## demands are numbered in order so find where to start adding
+    i <- length(demaug) + 1
+    for(ed in rg.edgeL(g)) {
+      ndem <- list()
+      ndem$source <- ed[[1]]
+      ndem$sink <- ed[[2]]
+      capacity <- as.double(edgeData(g,from=ed[[1]],to=ed[[2]],attr="capacity"))
+      ndem$demand <- capacity * gamma
+      demaug[[as.character(i)]] <- ndem
+      i <- i + 1
+    }
+    resaug <- rg.max.concurrent.flow.prescaled(g,demaug,e,progress=progress,
+                                               updateflow=TRUE)
+    
+    testdem <- as.vector(resaug$demands)[seq(1:10)]
+    lambda <- calcLambda(testdem)
+    
+    if(lambda < 1) {
+      ## gamma too large
+      ubound <- gamma
+    } else {
+      ## gamma too small
+      lbound <- gamma
+    }
+  }
+
+  if( lambda < 1.0 ) {
+    gamma <- lbound
+    ## augment demands
+    demaug <- demands
+    ## demands are numbered in order so find where to start adding
+    i <- length(demaug) + 1
+    for(ed in rg.edgeL(g)) {
+      ndem <- list()
+      ndem$source <- ed[[1]]
+      ndem$sink <- ed[[2]]
+      capacity <- as.double(edgeData(g,from=ed[[1]],to=ed[[2]],attr="capacity"))
+      ndem$demand <- capacity * gamma
+      demaug[[as.character(i)]] <- ndem
+      i <- i + 1
+    }
+    resaug <- rg.max.concurrent.flow.prescaled(g,demaug,e,progress=progress,
+                                               updateflow=TRUE)
+    
+    testdem <- as.vector(resaug$demands)[seq(1:10)]
+    lambda <- calcLambda(testdem)
+
+  }
+  
+  resaug$gamma <- gamma
+  resaug$ilbound <- ilbound
+  # get rid of the artificially generated demands
+  resaug$demands <- resaug$demands[1:length(demands)]
+  resaug$mcflambda <- mcflambda
+  resaug$resmcf <- resmcf
+  resaug
+}
+
+
+## wrote to test that the lowest cost dual was one of the 
+## paths selected in the ga. In practice it is most of the
+## time. The times it is not seem to be for trivial cases
+## where the ga selected and equal "cost" path (ie where
+## there was no other competing path)
+rg.integer.rounding.test.loop <- function(path) {
+  files <- Sys.glob(paste(path,"run[0-9]*",sep=""))
+  files <- files[order(as.numeric(gsub("^.*run([0-9]*).*$","\\1",files,files)))]
+  for(file in files) {
+    cat("doing",file,"\n")
+    load(file)
+    rg.integer.rounding.test(res)
+  }
+
+
+}
+rg.integer.rounding.test <- function(res) {
+
+
+  dem <- rg.max.concurrent.flow.rescale.demands.flow(res$splitflow$demands,res$splitflow$lambda)
+
+
+  gdual <- res$splitflow$gdual
+
+  gflow <- rg.max.concurrent.flow.graph(res$splitflow$gflow,dem)
+  
+  beta <- calcBeta(dem,gdual)
+  betaa <- calcBetaRestricted(dem,gdual)
+  lambda <- calcLambda(dem)
+
+  gap <- lambda / beta
+
+  mgap <- (1-res$splitflow$e)^3
+  
+  cat("Initial: beta=",beta,betaa,"lambda=",lambda,"gap=",gap,"mgap=",mgap,"\n")
+
+  multFlows <- FALSE
+
+  for(d in names(dem)) {
+    if(length(dem[[d]]$paths) > 1 ) {
+      multFlows <- TRUE
+      break
+    }
+  }
+
+  lowp <- ""
+  val <- Inf
+  lowd <- ""
+
+  pathcost <- list()
+  
+  for(d in names(dem)) {
+    pathcost[[d]]$paths <- list()
+    
+    data <- data.frame(Paths=character(0),cost=numeric(0),flow=numeric(0),highest=numeric(0))
+    count <-  1
+    lowc <- 1
+    for(p in names(dem[[d]]$paths)) {
+      cost <- rg.path.cost(gdual,p)
+      pathcost[[d]]$paths[[p]] <- cost
+      if (val > cost) {
+        val <- cost
+        lowp <- p
+        lowc <- count
+        lowd <- d
+      }
+      flow <- dem[[d]]$paths[[p]]
+      ##        data <- rbind(data,data.frame(Paths=p,cost=cost,flow=flow,highest=0))
+      count <- count + 1
+    }
+    
+    ##      data[[lowc,4]] <- 1
+    ##      data <- data[do.call(order,data[3]),]
+    ##    print(data)
+  }
+  
+  cat("lowest demand=",lowd,"lowest path=",lowp,"\n")
+  
+  pathlist <- c()
+  for(dem in names(lapply(res$demands,"[[","paths"))) {
+    pathlist <- c(pathlist,names(res$demands[[dem]]$paths))  
+  }
+  found.lowp <- FALSE
+  for(dem in names(res$demands)) {
+    if(pathlist[[as.integer(dem)]] == lowp) {
+      found.lowp <- TRUE
+    }
+  }
+  if(found.lowp) {
+    cat("lowest is in ga\n")
+  }
+  return(pathcost)
+}

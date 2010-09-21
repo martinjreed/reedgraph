@@ -1,5 +1,7 @@
-require("RBGL")
-require("genalg")
+require("igraph",quietly=TRUE)
+require("graph",quietly=TRUE,warn.conflicts=FALSE)
+require("RBGL",quietly=TRUE,warn.conflicts=FALSE)
+require("genalg",quietly=TRUE)
 ### return all the edges as a list of lists(head,tail)
 ### in graphNEL
 ### result is list of edges
@@ -12,6 +14,37 @@ rg.edgeL <- function(g) {
     }
   }
   ed
+}
+
+### returns the attribute of the graphNEL as a double
+### vector (in natural edge order)
+### input
+### g - graphNEL
+### attr="weight" for the default attribute
+### returns c(....)
+rg.edgeVector <- function(g,attr="weight") {
+  return(as.double(edgeData(g,attr=attr)))
+}
+
+rg.demandsVector <- function(demands,attr="demand") {
+  return(as.double(lapply(res$demands,"[[",attr)))
+}
+  
+### Creates an adjacency matrix containing edge ids
+### useful to get an edge number given two nodes
+### g - graphNEL (with L edges)
+### returns matrix (node/node) where element is edge
+### number 1 ..... L between node/node
+
+adjMatrix <- function(g) {
+  em <- edgeMatrix(g)
+  L <- length(em)/2
+  N <- length(nodes(g))
+  m <- matrix(nrow=N,ncol=N)
+  for(i in seq(1:L)) {
+    m[as.integer(em[1,i]),as.integer(em[2,i])] <- i
+  }
+  return(m)
 }
 
 
@@ -246,38 +279,8 @@ rg.set.weight.on.path <- function(g,path,val) {
 ### demands: a list each element is a list [source, sink, demand]
 rg.sp.max.concurrent.flow <- function(g,demands) {
 
-  updateFlow <- function(penult,mincap,demand) {
-    s <- demand$source
-    t <- demand$sink
-    p <- t
-    t <- penult[[t]]
-    tag <- paste(t,"|",p,sep="")
-    if(is.null(demand$edges[[tag]])) {
-      demand$edges[[tag]] <- mincap
-    } else {
-      demand$edges[[tag]] <-
-        demand$edges[[tag]] + mincap
-    }
-    
-    while(s !=t ) {
-      p <- t
-      t <- penult[[t]]
-      tag <- paste(t,"|",p,sep="")
-      if(is.null(demand$edges[[tag]])) {
-        demand$edges[[tag]] <- mincap
-      } else {
-        demand$edges[[tag]] <-
-          demand$edges[[tag]] + mincap
-      }
-      
-    }
-    
-    demand$flow <- demand$flow + mincap
-    demand
-  }
 
-    for(c in names(demands)) {
-    demands[[c]]$edges <- list()
+  for(c in names(demands)) {
     demands[[c]]$flow <- 0
   }
 
@@ -294,7 +297,7 @@ rg.sp.max.concurrent.flow <- function(g,demands) {
       g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
       path <- extractPath(i$source,i$sink,g.sp[[i$source]])
       gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
-      demands[[ccount]] <- updateFlow(g.sp[[i$source]],i$demand,i)
+      demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
       ccount <- ccount + 1
   }
   
@@ -372,12 +375,11 @@ calcLambda <- function(demands) {
 ### algorithm suggested by "Faster approximation schemes for
 ### fractional multicommodity flow problems" G. Karakostas,
 ### Proceedings ACM/SIAM SODA 2002
-
 ### g: graphNEL weights ignored
 ### e: approximation value for a w-opt solution
 ###    where (1+w) = (1-e)^2 (default e=0.1)
 ### progress: display graphical progress bar (default false)
-rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE) {
+rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation=NULL) {
 
   savedemands <- demands
   ## first obtain a reasonable feasible flow using
@@ -398,7 +400,7 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
   
   if (ccode) {
     res.2opt <- rg.fleischer.max.concurrent.flow.c(g,demands,e=e2,
-                                                   updateflow=FALSE,progress=progress)
+                                                   updateflow=FALSE,progress=progress,permutation)
   }  else {
     res.2opt <- rg.fleischer.max.concurrent.flow(g,demands,e=e2,
                                                  updateflow=FALSE,progress=progress)
@@ -414,11 +416,10 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 
   if(progress != FALSE)
     progress <- "Main calculation"
-  ## delete next line
-  cat("beginning main run with scalef",scalef*estlambdascale,"\n")
+
   if (ccode) {
     res <- rg.fleischer.max.concurrent.flow.c(g,demands,e=e,
-                                              progress=progress,updateflow=updateflow)
+                                              progress=progress,updateflow=updateflow,permutation)
   } else {
     res <- rg.fleischer.max.concurrent.flow(g,demands,e=e,
                                             progress=progress,updateflow=updateflow)
@@ -458,14 +459,10 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 ###              demands: each with met demand and paths
 
 
-rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE) {
+rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation=NULL) {
 
-  calcD <- function() {
-    sum(as.double(edgeData(gdual,attr="capacity"))*
-        as.double(edgeData(gdual,attr="weight")))
-  }
-
-
+  if(is.null(permutation))
+    permutation <- -1
   em <- edgeMatrix(g)
   nN <- nodes(g)
   nv <- length(nN)
@@ -482,11 +479,12 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   doubreq <- 2/e * log(ne/(1-e),base=(1+e))
 
   if(progress != FALSE) {
-    pb <- tkProgressBar(title = "progress bar", min = 0,
-                        max = doubreq, width = 300)
+    pb <- txtProgressBar(title = "progress bar", min = 0,
+                        max = doubreq, style=3)
   } else {
     pb <- NULL
   }
+  #permutation <- seq(0,length(demands)-1)
   retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
                    as.integer(nv),
                    as.integer(ne),
@@ -501,40 +499,23 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
                    as.logical(updateflow),
                    pb,
                    environment(),
-                   progress
+                   progress,
+                   permutation
                  )
   
   
   demflow <- retlist[[2]]
   for(c in names(demands)) {
-    demands[[c]]$edges <- list()
     demands[[c]]$flow <- demflow[[as.integer(c)]]
     demands[[c]]$paths <- list()
   }
+
+
   if(retlist[[3]][[1]] > 0) {
     retdemkey <- retlist[[4]]
     retdemval <- retlist[[5]]
     i <- 1
-    j <- 2
-    k <- 3
     for(n in seq(1:retlist[[3]][[1]])) {
-      tag <- paste(retdemkey[[j]],"|",retdemkey[[k]],sep="")
-      demand <- retdemkey[[i]]
-      demands[[demand]]$edges[[tag]] <- retdemval[[n]]
-      i <- i+3
-      j <- j+3
-      k <- k+3
-    }
-  }
-
-
-
-
-  if(retlist[[3]][[2]] > 0) {
-    retdemkey <- retlist[[6]]
-    retdemval <- retlist[[7]]
-    i <- 1
-    for(n in seq(1:retlist[[3]][[2]])) {
       demand <- retdemkey[[i]]
       i <- i+1
       path <- retdemkey[[i]]
@@ -571,7 +552,7 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   }
 
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
-                   phases=retlist[[3]][[3]],e=e)
+                   phases=retlist[[3]][[2]],e=e)
 }
 
 ### Utility function used by rg.fleischer.max.concurrent.flow()
@@ -588,22 +569,9 @@ updateExplicitFlow <- function(penult,mincap,demand) {
   
   path <- tag
   
-  if(is.null(demand$edges[[tag]])) {
-    demand$edges[[tag]] <- mincap
-  } else {
-    demand$edges[[tag]] <-
-      demand$edges[[tag]] + mincap
-  }
   while(s !=t ) {
     p <- t
     t <- penult[[t]]
-    tag <- paste(t,"|",p,sep="")
-    if(is.null(demand$edges[[tag]])) {
-      demand$edges[[tag]] <- mincap
-    } else {
-      demand$edges[[tag]] <-
-        demand$edges[[tag]] + mincap
-    }
     path <- paste(t,"|",path,sep="")
   }
   
@@ -673,35 +641,29 @@ rg.fleischer.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE, pr
            "weight") <- delta / capacities
 
   for(c in names(demands)) {
-    demands[[c]]$edges <- list()
     demands[[c]]$paths <- list()
     demands[[c]]$flow <- 0
   }
 
   
   doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
+  ## updatepb used to measure progress as percent
+  updatepb <- as.integer(ceiling(doubreq / 100.0))
 
-#  if(progress != FALSE)
-#    pb <- tkProgressBar(title = "progress bar", min = 0,
-#                        max = doubreq, width = 300)
+  if(progress != FALSE)
+    pb <- txtProgressBar(min = 0,
+                         max = doubreq, style=3)
   phases <- 0
   totalphases <- 0
   D <- calcD()
   lambdav <- c()
   betav <- c()
   while(D < 1 ) {
-    if(progress != FALSE) {
-
-      lab = ""
-      if ( is.character(progress) )
-        lab = progress
-#      setTkProgressBar(pb,totalphases,
-#                       label=paste( round(totalphases/doubreq *100, 0),
-#                                        lab))
-      cat("D=",D,"\n")
+    if(progress != FALSE && totalphases %% updatepb == 0) {
+      setTxtProgressBar(pb,totalphases)
     }
     if(phases > doubreq) {
-      cat("doubling",doubreq,totalphases,"\n");
+      cat("doubling\n");
       demands <- doubleDemands(demands)
       phases <- 0
     }
@@ -763,11 +725,319 @@ rg.fleischer.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE, pr
   gflow <- rg.max.concurrent.flow.graph(gdual,demands)
   retval <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,phases=totalphases,e=e)
 
-#  if(progress != FALSE)
-#    close(pb)
+  if(progress != FALSE)
+    close(pb)
 
   retval
 }
+
+### Calculates the maximum concurrent flow as per Fleischer, but with the
+### modification that demand paths have been specified
+### g - graphNEL with edge attributes capacity and weight (weight not used)
+### demands$flow
+### demands$paths - list of paths each element list[["1|2|3"]] = flow on path
+###                 only the path is used not the amount of flow that
+###                 may have been calculated on a previous run
+### e - the approximation limit
+### updateflow - default TRUE, may run a bit faster if FALSE but only
+###              lambda, bega and demand flow are given (path values not
+###              updated.
+### progress - prints out the value of D() (finishes when D >=1.0)
+### returns list:
+### demands paths - list of paths each element list[["1|2|3"]] = flow on path
+### gflow - graph as g but with weight set to traffic flow
+### gdual - the dual graphNEL with weight set to edge lengths
+### beta - the dual value
+### lambda - the primal value
+### phases - the total number of phases
+### e - as per the input
+rg.fleischer.max.concurrent.flow.restricted <- function(g,demands,e=0.1,updateflow=TRUE, progress=FALSE) {
+
+
+  ## this is actually slower than below!
+  findshortestpathtest <- function(paths,vlength) {
+    sums <- sapply(paths,function(x) sum(vlength[x]))
+    return(which.min(sums))
+  }
+
+  findshortestpath <- function(paths,vlength) {
+    min <- Inf
+    minp <- NULL
+    minpcount <- NULL
+    for(i in 1:length(paths)) {
+      if ( sum(vlength[paths[[i]]]) < min) {
+        minp <- paths[[i]]
+        minpcount <- i
+        min <- sum(vlength[paths[[i]]])
+      }
+    }
+    
+    return(minpcount)
+  }
+  
+  savedemands <- demands
+  
+  vdemands <- as.double(lapply(demands,"[[","demand"))
+  vcapacity <- as.double(edgeData(g,attr="capacity"))
+  vweight <- rep(0.0,length(vcapacity))
+  vlength <- rep(0.0,length(vcapacity))
+  vdemandflow <- rep(0.0,length(vcapacity))
+  L <- length(vlength)
+  edgeMap <- adjMatrix(g)
+  demandpaths <- list()
+  demandpathflows <- list()
+  j <- 1
+  for(d in demands) {
+    demandpaths[[j]] <- list()
+    demandpathflows[[j]] <- list()
+    k <- 1
+    for(p in names(d$paths)) {
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- as.integer(pv[1:length(pv)-1])
+      tolist <- as.integer(pv[2:length(pv)])
+      me <- rbind(fromlist,tolist)
+      pv <- c()
+      for(i in 1:length(fromlist)) {
+        v <- as.vector(me[,i])
+        em <- edgeMap[v[1],v[2]]
+        pv <- append(pv,em)
+      }
+      demandpaths[[j]][[k]] <- pv
+      demandpathflows[[j]][[k]] <- 0.0
+      k <- k + 1
+    }
+    j <- j + 1
+  }
+  ## note this is not the dual value
+  calcD <- function() {
+    sum(vcapacity*vlength)
+  }
+  
+  doubleCount <- 0
+  doubleDemands <- function(demands) {
+    vdemands <- vdemands * 2.0
+    doubleCount <- doubleCount + 1
+    vdemands
+  }
+  gdual <- g
+
+  ## number of arcs
+  m <- length(rg.edgeL(g))
+  ## number of nodes
+  N <- length(nodes(g))
+  delta <- (m / (1-e)) ^ (-1/e)
+  vlength <- delta / vcapacity
+
+  for(c in names(demands)) {
+    demands[[c]]$paths <- list()
+    demands[[c]]$flow <- 0
+  }
+
+  
+  doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
+  ## updatepb used to measure progress as percent
+  updatepb <- as.integer(ceiling(doubreq / 100.0))
+
+  if(progress != FALSE)
+    pb <- txtProgressBar(min = 0,
+                        max = doubreq, style=3)
+  phases <- 0
+  totalphases <- 0
+  D <- calcD()
+
+  ## main algorithm
+  while(D < 1 ) {
+    if(progress != FALSE && totalphases %% updatepb == 0) {
+      setTxtProgressBar(pb,totalphases)
+    }
+    if(phases > doubreq) {
+      cat("doubling",doubreq,totalphases,"\n");
+      vdemands <- doubleDemands(vdemands)
+      phases <- 0
+    }
+
+    for(i in 1:length(vdemands)) {
+      demand <- vdemands[i]
+      D <- calcD()
+      while( D < 1 && demand > 0 ) {
+        p <- findshortestpath(demandpaths[[i]],vlength)
+        caponpath <- vcapacity[ demandpaths[[i]][[p]] ]
+        mincap <- min(demand,caponpath)
+        demand <- demand - mincap
+        lengths <- vlength[ demandpaths[[i]][[p]] ]
+        lengths <- lengths * (1 + (e*mincap) / caponpath)
+        vlength[ demandpaths[[i]][[p]] ] <- lengths
+        demandpathflows[[i]][[p]] <- demandpathflows[[i]][[p]] + mincap
+        vdemandflow[i] <- vdemandflow[i] + mincap
+        D <-  calcD()
+      }
+    }
+    phases <- phases +1
+    totalphases <- totalphases + 1
+  }
+  ## end of main algorithm - now need to pack results
+
+  ## If there had been demands doubling we need to
+  ## fix things for the returned demands
+  for(n in 1:length(demands)) {
+    demands[[n]]$demand <- savedemands[[n]]$demand
+    demands[[n]]$paths <- savedemands[[n]]$paths
+    demands[[n]]$flow <- vdemandflow[n]
+    for(i in 1:length(demands[[n]]$paths)) {
+      demands[[n]]$paths[[i]] <- demandpathflows[[n]][[i]]
+    }
+  }
+  gdual <- rg.set.weight(gdual,vlength)
+  scalef <- 1 / log(1/delta,base=(1+e))
+  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+
+  beta <- calcBeta(demands,gdual)
+  betar <- calcBetaRestricted(demands,gdual)
+  lambda=NULL
+  lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
+    
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+  retval <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,betar=betar,
+                 lambda=lambda,phases=totalphases,e=e,vlength=vlength)
+
+  if(progress != FALSE)
+    close(pb)
+
+  retval
+}
+
+### As the R version see above Tested 21/5/2010 performs the same,
+### however some rounding differences mean there will be differences
+### in actual result from R version. A small rounding error can
+### influence the route (shortest path) so differences could be
+### substantial, however, lambda and beta should be within the bounds
+### set by e
+rg.fleischer.max.concurrent.flow.restricted.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,bestgamma=-1) {
+
+  ## note this is not the dual value
+  calcD <- function() {
+    sum(vcapacity*vlength)
+  }
+
+  savedemands <- demands
+  
+  vdemands <- as.double(lapply(demands,"[[","demand"))
+  vcapacity <- as.double(edgeData(g,attr="capacity"))
+  vlength <- rep(0.0,length(vcapacity))
+  vdemandflow <- rep(0.0,length(vcapacity))
+  L <- length(vlength)
+  delta <- (L / (1-e)) ^ (-1/e)
+  vlength <- delta / vcapacity
+  edgeMap <- adjMatrix(g)
+
+  demands.paths <- as.integer(c())
+
+  ## code the paths as integers
+  ## [demandno(e.g=1) numdempaths lengthpath1 path1[1] path1[2] ...
+  ##  lengthpath2 path2[1] path2[2]....demandno(e.g=2)....]
+  rdemandpaths <- list();
+  for(d in 1:length(demands)) {
+    rdemandpaths[[d]] <- list()
+    demands.paths <- append(demands.paths,d-1)
+    demands.paths <- append(demands.paths,length(demands[[d]]$paths))
+    for(p in 1:length(demands[[d]]$paths)) {
+      pathi <-
+        as.integer(strsplit
+                   (names(demands[[d]]$paths[p]),"|",fixed=TRUE)[[1]])
+      pathi <- pathi -1
+      rdemandpaths[[d]][[p]] <- pathi
+      demands.paths <- append(demands.paths,length(pathi))
+      demands.paths <- append(demands.paths,pathi)
+    }
+
+  }
+
+  demandpaths <- list()
+  j <- 1
+  for(d in demands) {
+    demandpaths[[j]] <- list()
+    k <- 1
+    for(p in names(d$paths)) {
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- as.integer(pv[1:length(pv)-1])
+      tolist <- as.integer(pv[2:length(pv)])
+      me <- rbind(fromlist,tolist)
+      pv <- c()
+      for(i in 1:length(fromlist)) {
+        v <- as.vector(me[,i])
+        em <- edgeMap[v[1],v[2]]
+        pv <- append(pv,em)
+      }
+      demandpaths[[j]][[k]] <- pv -1
+      k <- k + 1
+    }
+    j <- j + 1
+  }
+
+  
+  
+  m <- length(rg.edgeL(g))
+
+  doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
+
+  if(progress != FALSE) {
+    pb <- txtProgressBar(title = "progress bar", min = 0,
+                         max = doubreq, style=3)
+  } else {
+    pb <- NULL
+  }
+
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_restricted_c",
+                   demandpaths,
+                   vdemands,
+                   vcapacity,
+                   e,
+                   progress,
+                   pb,
+                   bestgamma,
+                   environment()
+                   );
+
+  if( progress != FALSE) {
+    close(pb)
+  }
+
+  ## now need to unpack results
+  demands <- savedemands
+  
+  for(n in 1:length(demands)) {
+    flow <- 0
+    for(i in 1:length(demands[[n]]$paths)) {
+      flow <- flow + retlist$pathflows[[n]][[i]]
+      demands[[n]]$paths[[i]] <- retlist$pathflows[[n]][[i]]
+    }
+    demands[[n]]$flow <- flow
+  }
+
+  gdual <- g
+  gdual <- rg.set.weight(gdual,retlist$vlengths)
+  scalef <- 1 / log(1/delta,base=(1+e))
+  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+  beta <- calcBeta(demands,gdual)
+  betar <- calcBetaRestricted(demands,gdual)
+  lambda=NULL
+  lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
+    
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+  retval <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,betar=betar,
+                 lambda=lambda,phases=retlist$totalphases,e=e,vlength=retlist$vlengths,
+                 countgamma=retlist$countgamma,
+                 bestgamma=retlist$bestgamma,
+                 bestpaths=retlist$bestpaths+1)
+
+  
+  return(retval)
+}
+
 
 
 rg.max.concurrent.flow.analyse <- function(res) {
@@ -810,9 +1080,6 @@ rg.fleischer.max.concurrent.flow.stats <- function(reslist) {
 rg.max.concurrent.flow.rescale.demands.flow <- function(demands,scalef) {
   for(dn in names(demands)) {
     demands[[dn]]$flow <- demands[[dn]]$flow * scalef
-    for(en in names(demands[[dn]]$edges)) {
-      demands[[dn]]$edges[[en]] <- demands[[dn]]$edges[[en]] * scalef
-    }
     for(en in names(demands[[dn]]$paths)) {
       demands[[dn]]$paths[[en]] <- demands[[dn]]$paths[[en]] * scalef
     }
@@ -845,17 +1112,20 @@ rg.set.all.graph.edge.weights <- function(g,val=0.0)  {
 ### weights given edge flows in demand
 ###
 ### graph - GraphNEL with empty edge weights (or ignored if they are set)
-### demands - each demand edges value used to update graph edge weight
+### demands - each demand path value used to update graph edge weight
 ### return - new graph with edge weights set
 
 rg.max.concurrent.flow.graph <- function(g,demands) {
   g <- rg.set.all.graph.edge.weights(g)
   for(d in demands) {
-    for(en in names(d$edges)) {
-      from <- strsplit(en,"|",fixed=TRUE)[[1]][1]
-      to <- strsplit(en,"|",fixed=TRUE)[[1]][2]
-      edgeData(g,from=from,to=to,attr="weight") <-
-        as.double(edgeData(g,from=from,to=to,attr="weight")) + d$edges[[en]]
+    for(p in names(d$paths)) {
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- pv[1:length(pv)-1]
+      tolist <- pv[2:length(pv)]
+      weights <- as.double(edgeData(g,from=fromlist,to=tolist,att="weight"))
+      weights <- weights + d$paths[[p]]
+      edgeData(g,from=fromlist,to=tolist,att="weight") <- weights
+
     }
   }
   g
@@ -885,9 +1155,9 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 
-rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE) {
+rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation=NULL) {
 
-  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE)
+  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE,permutation=permutation)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
   
   res$gflow <- rg.max.concurrent.flow.graph(res$gflow,res$demands)
@@ -984,7 +1254,6 @@ rg.integer.iterative <- function(res) {
   for(d in names(dem)) {
     dem[[d]]$original <- d
     dem[[d]]$paths <- NULL
-    dem[[d]]$edges <- NULL
   }
   
   while(length(dem) > 0) {
@@ -1271,18 +1540,6 @@ rg.integer.rounding <- function(res) {
     dem[[d]]$paths[1] <- dem[[d]]$demand
   }
 
-  for(d in names(dem)) {
-    dem[[d]]$edges <- list()
-    pv <- as.vector(strsplit(names(dem[[d]]$paths[1])[1],"|",fixed=TRUE)[[1]])
-    from <- pv[1:length(pv)-1]
-    to <- pv[2:length(pv)]
-    
-    for(i in seq(1:length(from))) {
-      arg <- paste(from[i],"|",to[i],sep="")
-      dem[[d]]$edges[[arg]] <- dem[[d]]$paths[[1]]
-    }
-    
-  }
   
   gflow <- rg.max.concurrent.flow.graph(gflow,dem)
 
@@ -1543,14 +1800,3 @@ rg.integer.min.congestion.flow.ga.graph <- function(string,split) {
   g
 }
 
-### Function to display the first path for each demand
-### demands - demands list with paths set for each demand
-### return - NULL
-rg.show.integer.paths <- function(demands) {
-
-  for(d in as.character(sort(as.integer(names(demands))))) {
-    path <- names(demands[[d]]$paths[1])
-    cat("demand",d,"path",path,"\n")
-  }
-
-}

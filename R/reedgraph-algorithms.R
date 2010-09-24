@@ -379,7 +379,7 @@ calcLambda <- function(demands) {
 ### e: approximation value for a w-opt solution
 ###    where (1+w) = (1-e)^2 (default e=0.1)
 ### progress: display graphical progress bar (default false)
-rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation=NULL) {
+rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation="fixed") {
 
   savedemands <- demands
   ## first obtain a reasonable feasible flow using
@@ -454,15 +454,20 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 ###
 ### e: accuracy ( 0 < e < 1 ) 0 is more accurate, 1 less accurate
 ###
+### permutation: how the demands are chosen can be either
+###              c(....) integers specifying demand order
+###              "fixed" done in fixed order
+###              "random" done in random order
+###              "lowest" done in lowest cost (lowest dual path) order
+###
 ### output: list:
 ###              graph: with weight set to edge flow
 ###              demands: each with met demand and paths
 
 
-rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation=NULL) {
+rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="lowest") {
 
-  if(is.null(permutation))
-    permutation <- -1
+
   em <- edgeMatrix(g)
   nN <- nodes(g)
   nv <- length(nN)
@@ -484,6 +489,15 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   } else {
     pb <- NULL
   }
+  if(length(permutation) == length(demands))
+    permutation <- permutation - 1
+  else if(permutation == "fixed")
+    permutation <- 0
+  else if(permutation == "random")
+    permutation <- -1
+  else if(permutation == "lowest")
+    permutation <- -2
+  
   #permutation <- seq(0,length(demands)-1)
   retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
                    as.integer(nv),

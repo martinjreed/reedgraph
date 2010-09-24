@@ -57,13 +57,14 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
 
 analyse.inner <- function(scenario,foundratio,file) {
   
-  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=0.005,progress=TRUE)
+  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=0.005,progress=TRUE,permutation="fixed")
   res <- rg.max.concurrent.flow.int.c(
                                       scenario$g,
                                       results$demands,
                                       e=0.005,
                                       scenario=scenario,
-                                      progress=TRUE
+                                      progress=TRUE,
+                                      permutation="fixed"
                                       )
   res$scenario <- scenario
   foundratio <- c(foundratio,as.double(res$countgamma)/as.double(res$phases))
@@ -76,13 +77,28 @@ analyse.inner <- function(scenario,foundratio,file) {
   return(retlist)
 }
 
+### permutation: how the demands are chosen can be either
+###              c(....) integers specifying demand order
+###              "fixed" done in fixed order
+###              "random" done in random order
+###              "lowest" done in lowest cost (lowest dual path) order
+###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,scenario) {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,scenario,permutation="fixed") {
 
   ## note this is not the dual value
   calcD <- function() {
     sum(vcapacity*vlength)
   }
+  if(length(permutation) == length(demands))
+    permutation <- permutation - 1
+  else if(permutation == "fixed")
+    permutation <- 0:(length(demands)-1)
+  else if(permutation == "random")
+    permutation <- -1
+  else if(permutation == "lowest")
+    permutation <- -2
+
   bestgamma=scenario$intgammalist[[1]]
   savedemands <- demands
   vdemands <- as.double(lapply(demands,"[[","demand"))
@@ -157,8 +173,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
     pb <- NULL
   }
 
-retlist <- .Call("rg_max_concurrent_flow_int_c",
-#  retlist <- .Call("rg_fleischer_max_concurrent_flow_restricted_c_test",
+  retlist <- .Call("rg_max_concurrent_flow_int_c",
                    demandpaths,
                    vdemands,
                    vcapacity,
@@ -167,9 +182,10 @@ retlist <- .Call("rg_max_concurrent_flow_int_c",
                    pb,
                    bestgamma,
                    bestpaths-1,
-                   environment()
+                   environment(),
+                   permutation
                    );
-
+  
   if( progress != FALSE) {
     close(pb)
   }

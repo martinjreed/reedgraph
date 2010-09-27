@@ -390,7 +390,7 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
   ## that beta > 1
   estlambdascale <- estimate$lambda
   demands <- rg.rescale.demands(demands,estimate$lambda)
-  
+
   ## Beta might be very high so obtain 2-approximate solution
   ## (1+w) = 2 = (1-e)^-3
   e2= 1- 2^(-1/3)
@@ -489,7 +489,7 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   } else {
     pb <- NULL
   }
-  if(length(permutation) == length(demands))
+  if(is.numeric(permutation))
     permutation <- permutation - 1
   else if(permutation == "fixed")
     permutation <- 0
@@ -1169,7 +1169,7 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 
-rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation=NULL) {
+rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random") {
 
   res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE,permutation=permutation)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)

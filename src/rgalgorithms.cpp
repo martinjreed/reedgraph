@@ -1045,7 +1045,7 @@ public:
 	double c = a +b;
 
 	std::vector<int> demand_index(num_dem);
-	if(permutation.size()==num_dem) {
+	if(permutation[0] >= 0) {
 	  demand_index = permutation;
 	} else {
 	  for(int i=0; i<num_dem; i++) {

@@ -90,7 +90,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
   calcD <- function() {
     sum(vcapacity*vlength)
   }
-  if(length(permutation) == length(demands))
+  if(is.numeric(permutation))
     permutation <- permutation - 1
   else if(permutation == "fixed")
     permutation <- 0:(length(demands)-1)

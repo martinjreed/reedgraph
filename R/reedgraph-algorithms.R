@@ -492,7 +492,7 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   if(is.numeric(permutation))
     permutation <- permutation - 1
   else if(permutation == "fixed")
-    permutation <- 0
+    permutation <- 0: (length(demands) -1)
   else if(permutation == "random")
     permutation <- -1
   else if(permutation == "lowest")

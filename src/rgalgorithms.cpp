@@ -505,7 +505,7 @@ SEXP rg_test_c(SEXP v) {
 	for(int i=0;i<numpaths;i++) {
 	  trypath[i]=i;
 	}
-	//random_shuffle(trypath.begin(),trypath.end());
+	random_shuffle(trypath.begin(),trypath.end());
 
 	std::vector< std::pair<int,double> > best;
 	std::vector< std::pair<int,double> >::iterator bit,bend;
@@ -533,7 +533,7 @@ SEXP rg_test_c(SEXP v) {
 		best.push_back(std::pair<int,double>(*tit,sum));
 	  }
 	}
-	return (std::pair<int,double>(minp,min));
+	//return (std::pair<int,double>(minp,min));
 	
 	bend=best.end();
 	double bestcap=-DBL_MAX;
@@ -1554,9 +1554,8 @@ public:
 	  if(permutation[0] == -1) {
 		random_shuffle(demand_index.begin(),demand_index.end());
 	  }
-
 	  for(int j=0; j<numD;j++,i++) {
-
+		
 		if(sort_order) {
 		  std::vector< std::pair<int,double> >::iterator pit,pend;
 		  pend=costpair.end();
@@ -1578,18 +1577,18 @@ public:
 		  underdemand=false;
 
 		int countunder=0;
+		bool first_time=true;
 		while( D < 1.0 && demand > 0.0) {
 		  // could use this
-		  /* 
 		  std::pair<long, double> ppair = 
 			findshortestpathcostopt(paths[i],
 									vlengths,
 									vcapacity,
-									weights2,
-									vdemands[i]);*/
-		  std::pair<long, double> ppair2 = 
+									weights,
+									vdemands[i]);
+		  /*std::pair<long, double> ppair = 
 			findshortestpathcost(paths[i],
-								 vlengths);
+			vlengths);*/
 		  /*
 		  Rprintf("%ld, %lg, %ld, %lg, %lg\n",
 				  tmppair.first,
@@ -1597,7 +1596,7 @@ public:
 				  ppair.first,
 				  ppair.second,tmppair.second - ppair.second);*/
 
-		  int p = ppair2.first;
+		  int p = ppair.first;
 		  //int p = findshortestpath(paths[i],vlengths);
 		  pathCount[i][p]++;
 		  //find minimum of demand or capacity on path
@@ -1612,12 +1611,16 @@ public:
 		  
 		  // this needs more thought - this only records
 		  // on the last time
-		  if(demand <=0) {
+		  //if(demand <=0) {
+		  // while this records only the first time
+		  // which one is best?
+		  if(first_time) {
 			pathrecord[i]=p;
 			for(vi=paths[i][p].begin(); vi != ve; vi++) {
 				weights[*vi] += origdemands[i];
 			}
-		  }		  
+		  } else
+			first_time=false;
 		  int sz = paths[i][p].size();
 		  for(int k=0; k < sz; k++) {
 			double length = vlengths[paths[i][p][k]];

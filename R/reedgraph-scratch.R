@@ -77,6 +77,20 @@ analyse.inner <- function(scenario,foundratio,file) {
   return(retlist)
 }
 
+rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fixed",scenario) {
+
+  newdemands <- list()
+  for(i in 1:length(demands)) {
+    tmp <- list()
+    tmp[["1"]] <- demands[[i]]
+    results <- rg.minimum.congestion.flow(g,tmp,e=e,progress=progress,permutation=permutation)
+    newdemands[[i]] <- results$demands[[1]]
+  }
+  res <- rg.max.concurrent.flow.int.c(g,newdemands,e=e,progress=progress,scenario=scenario,permutation=permutation)
+  return(res)
+}
+
+
 ### permutation: how the demands are chosen can be either
 ###              c(....) integers specifying demand order
 ###              "fixed" done in fixed order
@@ -221,9 +235,9 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
       cat("demand ",d,": ")
       for(p in 1:length(demandpaths[[d]])) {
         mincap = Inf
-        for(e in demandpaths[[d]][[p]]) {
-          if(vcapacity[e+1] < mincap) {
-            mincap = vcapacity[e+1]
+        for(ed in demandpaths[[d]][[p]]) {
+          if(vcapacity[ed+1] < mincap) {
+            mincap = vcapacity[ed+1]
           }
         }
         cat(" ",retlist$pathcount[[d]][[p]])

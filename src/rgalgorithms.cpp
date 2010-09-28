@@ -998,14 +998,14 @@ public:
 
 	graph_traits < Graph_rg >::edge_iterator ei, eend;
 
-	// to be removed
+#ifdef RECORDPATH
 	std::vector< std::vector< std::vector<int> > > paths;
 
 	std::vector< std::vector< int > > pathCount;
 	int sz = demands.size();
 	paths.resize(sz);
 	pathCount.resize(sz);
-	//end
+#endif
 
 
 	for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
@@ -1511,7 +1511,6 @@ public:
 		
 		phases = 0;
 	  }
-
 	  if(progress != false && totalphases % updatepb == 0) {
 		sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
 		SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
@@ -1540,12 +1539,15 @@ public:
 		pend=costpair.end();
 		int i=0;
 		for(pit=costpair.begin(); pit != costpair.end();i++,pit++) {
-		  (*pit).first=i;
+		  //(*pit).first=i;
+		  i=(*pit).first;
 		  std::pair<long, double> p = findshortestpathcost(paths[i],vlengths);
 		  (*pit).second = p.second;
 		}
 		
 		std::sort(costpair.begin(),costpair.end(),less_cost());
+		// inserted for testing - need to remove
+		random_shuffle(costpair.begin(),costpair.end());
 		for(int m=0;m<numD;m++) {
 		  demand_index[m]=costpair[m].first;
 		}
@@ -1554,6 +1556,7 @@ public:
 	  if(permutation[0] == -1) {
 		random_shuffle(demand_index.begin(),demand_index.end());
 	  }
+
 	  for(int j=0; j<numD;j++,i++) {
 		
 		if(sort_order) {
@@ -1580,15 +1583,15 @@ public:
 		bool first_time=true;
 		while( D < 1.0 && demand > 0.0) {
 		  // could use this
-		  std::pair<long, double> ppair = 
+		  /*std::pair<long, double> ppair = 
 			findshortestpathcostopt(paths[i],
 									vlengths,
 									vcapacity,
 									weights,
-									vdemands[i]);
-		  /*std::pair<long, double> ppair = 
+									vdemands[i]);*/
+		  std::pair<long, double> ppair = 
 			findshortestpathcost(paths[i],
-			vlengths);*/
+			vlengths);
 		  /*
 		  Rprintf("%ld, %lg, %ld, %lg, %lg\n",
 				  tmppair.first,
@@ -1611,10 +1614,10 @@ public:
 		  
 		  // this needs more thought - this only records
 		  // on the last time
-		  //if(demand <=0) {
+		  if(demand <=0) {
 		  // while this records only the first time
 		  // which one is best?
-		  if(first_time) {
+		  //if(first_time) {
 			pathrecord[i]=p;
 			for(vi=paths[i][p].begin(); vi != ve; vi++) {
 				weights[*vi] += origdemands[i];

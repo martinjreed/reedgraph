@@ -57,14 +57,14 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
 
 analyse.inner <- function(scenario,foundratio,file) {
   
-  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=0.005,progress=TRUE,permutation="fixed")
+  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=0.005,progress=TRUE,permutation="lowest")
   res <- rg.max.concurrent.flow.int.c(
                                       scenario$g,
                                       results$demands,
                                       e=0.005,
                                       scenario=scenario,
                                       progress=TRUE,
-                                      permutation="fixed"
+                                      permutation="lowest"
                                       )
   res$scenario <- scenario
   foundratio <- c(foundratio,as.double(res$countgamma)/as.double(res$phases))

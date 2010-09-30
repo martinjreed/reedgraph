@@ -29,7 +29,20 @@ rg.edgeVector <- function(g,attr="weight") {
 rg.demandsVector <- function(demands,attr="demand") {
   return(as.double(lapply(res$demands,"[[",attr)))
 }
-  
+
+rg.count.paths <- function(demands,numlist=NULL) {
+  num <- 0
+  if(is.null(numlist))
+    numlist <- seq(1,length(demands))
+  for(i in numlist){
+    for(p in names(demands[[i]]$paths)) {
+      num <- num + 1
+    }
+  }
+  return(num)
+}
+
+
 ### Creates an adjacency matrix containing edge ids
 ### useful to get an edge number given two nodes
 ### g - graphNEL (with L edges)

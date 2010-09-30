@@ -259,7 +259,7 @@ SEXP rg_test_c(SEXP v) {
 
 	double D;
 	D=calcD(gdual);
-	int doubreq =  int(ceil(2.0/e * log(m/(1-e))/log(1+e)));
+	int doubreq =  2*int(ceil(1.0/e * log(m/(1-e))/log(1+e)));
 	
 	// assuming doubreq is about the maximum number of phases
 	// then we want to only update the progress bar every 1%
@@ -652,7 +652,7 @@ public:
 	  vlengths[i]=delta / vcapacity[i];
 	}
 
-	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
+	int doubreq =  2*int(ceil(1.0/e * log(M/(1-e))/log(1+e)));
 	int updatepb = int(ceil(doubreq / 100.0));
 
 	double D=0.0;
@@ -795,7 +795,7 @@ public:
 	  vlengths[i]=delta / vcapacity[i];
 	}
 
-	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
+	int doubreq =  2*int(ceil(1.0/e * log(M/(1-e))/log(1+e)));
 	int updatepb = int(ceil(doubreq / 100.0));
 
 	double D=0.0;
@@ -1020,7 +1020,7 @@ public:
 
 	double D;
 	D=calcD(gdual);
-	int doubreq =  int(ceil(2.0/e * log(m/(1-e))/log(1+e)));
+	int doubreq =  2*int(ceil(1.0/e * log(m/(1-e))/log(1+e)));
 	
 	// assuming doubreq is about the maximum number of phases
 	// then we want to only update the progress bar every 1%
@@ -1336,12 +1336,44 @@ public:
   }
 
 
+  inline std::vector<double> 
+  calcgraphweights(std::vector< std::vector< std::vector<int> > > &paths,
+				    std::vector<int> &pathrecord,
+				   std::vector<double> &demands,
+				   int M) {
+	int numD=demands.size();
+	std::vector<double> weights(M,0.0);
+	std::vector<int>::iterator vi,ve;
+	
+	for(int i=0; i<numD;i++) {
+	  ve=paths[i][pathrecord[i]].end();
+	  for(vi=paths[i][pathrecord[i]].begin(); vi != ve; vi++) {
+		weights[*vi] += demands[i];
+	  }
+	}
+	return(weights);
+  }
+
+  inline double calcgamma(std::vector<double> weights,
+						  std::vector<double> vcapacity) {
+	int M = weights.size();
+	double gamma = DBL_MAX;
+	for(int j=0; j< M; j++) {
+	  double tmp = 1.0 - weights[j]/vcapacity[j];
+	  if( gamma > tmp ) {
+		gamma = tmp;
+	  }
+	}
+	return(gamma);
+  }
+  
   SEXP rg_max_concurrent_flow_int_c
   (
    SEXP RRdemandpaths,
    SEXP Rdemands,
    SEXP Rcapacity,
    SEXP Re,
+   SEXP ReInternal,
    SEXP Rprogress,
    SEXP pb,
    SEXP Rintgamma,
@@ -1352,10 +1384,8 @@ public:
 
 	bool progress=Rcpp::as<bool>(Rprogress);
 	double e = Rcpp::as<double>(Re);
+	double eInternal = Rcpp::as<double>(ReInternal);
 	double intgamma = Rcpp::as<double>(Rintgamma);
-	bool calcgamma=false;
-	if(intgamma >=0) 
-	  calcgamma=true;
 	std::vector<double> vcapacity = RcppVector<double>(Rcapacity).stlVector();
 	std::vector<double> vdemands = RcppVector<double>(Rdemands).stlVector();
 	std::vector<double> origdemands(vdemands);	
@@ -1365,7 +1395,7 @@ public:
 	std::vector<double>::iterator vecdit;
 	int M = vcapacity.size();
 	//decode Rdemandpaths into paths
-	std::vector<int>::iterator vi,ve;
+	std::vector<int>::iterator vi,vj,ve;
 	std::vector< std::vector< std::vector<int> > > paths;
 	std::vector< std::vector< int > > pathCount;
 	std::vector< std::vector< std::vector<int> > >::iterator dit;
@@ -1405,32 +1435,13 @@ public:
 		dlengths[j][i]=delta / vcapacity[j];
 	  }
 	}
-	std::vector< std::vector<double> > dlengths2(numD);
-	for(int j=0; j<numD; j++) {
-	  dlengths2[j]=std::vector<double>(M);
-	  for(int i=0;i<M;i++) {
-		dlengths2[j][i]=delta / vcapacity[j];
-	  }
-	}
-
-	std::vector< std::vector<double> > dlengths3(numD);
-	for(int j=0; j<numD; j++) {
-	  dlengths3[j]=std::vector<double>(M);
-	  for(int i=0;i<M;i++) {
-		dlengths3[j][i]=delta;
-	  }
-	}
-
 	std::vector<double> vlengths(M);
 	for(int i=0;i<M;i++) {
 	  vlengths[i]=delta / vcapacity[i];
 	}
-	std::vector<double> vlengths2(M);
-	for(int i=0;i<M;i++) {
-	  vlengths2[i]=delta / vcapacity[i];
-	}
 
-	int doubreq =  int(ceil(2.0/e * log(M/(1-e))/log(1+e)));
+	//int doubreq =  2*int(ceil(1.0/eInternal * log(M/(1-eInternal))/log(1+eInternal)));
+	int doubreq =  2*int(ceil(log(1.0/delta)/log(1+eInternal)));
 	int updatepb = int(ceil(doubreq / 100.0));
 
 	double D=0.0;
@@ -1501,7 +1512,13 @@ public:
 	  // fix this just to "bomb out"
 	  D=1.0;
 	}
+
+	std::vector<int> pathdiffcount(1,0);
+	std::vector<int> phasepathdiffcount(1,0);
 	
+	bool first_phase=true;
+	std::vector<int> prevphasepathrecord(numD);
+
 	while( D < 1.0) {
 	  if(phases > doubreq) {
 		Rprintf("doubling!!\n");
@@ -1527,6 +1544,7 @@ public:
 
 	  
 	  std::vector<int> pathrecord(numD);
+	  std::vector<int> prevpathrecord(numD);
 	  std::vector<double> weights(M,0.0);
 	  std::vector<int> recdemands(0);
 
@@ -1614,20 +1632,28 @@ public:
 		  
 		  // this needs more thought - this only records
 		  // on the last time
+		  if(!first_time) {
+			prevpathrecord[i]=pathrecord[i];
+		  } else {
+			first_time=false;
+			prevpathrecord[i]=p;
+		  }
+		  
+		  pathrecord[i]=p;
+
+
 		  if(demand <=0) {
 		  // while this records only the first time
 		  // which one is best?
 		  //if(first_time) {
-			pathrecord[i]=p;
 			for(vi=paths[i][p].begin(); vi != ve; vi++) {
 				weights[*vi] += origdemands[i];
 			}
-		  } else
-			first_time=false;
+		  } 
 		  int sz = paths[i][p].size();
 		  for(int k=0; k < sz; k++) {
 			double length = vlengths[paths[i][p][k]];
-			length *= (1.0 + (e * mincap) /
+			length *= (1.0 + (eInternal * mincap) /
 					   vcapacity[paths[i][p][k]]);
 			vlengths[paths[i][p][k]] = length;
 		  }
@@ -1647,6 +1673,7 @@ public:
 		  countunderv.resize(countunder+1);
 		}
 		countunderv[countunder]++;
+		
 
 	  }// end for each demand
 
@@ -1654,44 +1681,111 @@ public:
 	  
 	  // this is just used to calculate gamma
 
-
-	  std::vector<double> gweights(M,0.0);	  
-	  for(int j=0; j<numD;j++) {
-		i= demand_index[j];
-		ve=paths[i][pathrecord[i]].end();
-		for(vi=paths[i][pathrecord[i]].begin(); vi != ve; vi++) {
-		  /*
-			if(minfree > vcapacity[*vi] - demand) {
-			minfree = vcapacity[*vi] - demand;
-			smallestcap = vcapacity[*vi];
-			}*/
-		  gweights[*vi] += origdemands[i];
-		}
-	  }
+	  
 
 	  phases++;
 	  totalphases++;
-	  if(calcgamma && underdemand) {
-		double gamma = DBL_MAX;
-		for(int j=0; j< M; j++) {
-		  double tmp = 1.0 - gweights[j]/vcapacity[j];
-		  if( gamma > tmp ) {
-			gamma = tmp;
+
+	  int numdiff=0;
+
+	  //compare paths
+	  for(int j=0; j<numD; j++) {
+		if(prevpathrecord[j] != pathrecord[j]) {
+		  numdiff++;
+		}
+	  }
+	  if(pathdiffcount.size()<numdiff+1)
+		pathdiffcount.resize(numdiff+1);
+	  pathdiffcount[numdiff]++;
+
+	  numdiff=0;
+	  if(first_phase) {
+		for(int j=0; j<numD; j++) {
+		  prevphasepathrecord[j]=pathrecord[j];
+		}
+		first_phase=false;
+	  } else {
+		//Rprintf("pathrecord\n");
+		
+		for(int j=0; j<numD; j++) {
+		  //Rprintf("%ld,",pathrecord[j]);
+		  if(prevpathrecord[j] != prevphasepathrecord[j]) {
+			numdiff++;
 		  }
 		}
-		if(gamma > bestgamma) {
-		  bestgamma = gamma;
-		  bestpaths = pathrecord;
-		  //Rprintf("bestgamma so far %lg\n",bestgamma);
-		  //Rprintf("best paths: ");
-		  //for(int j=0; j<numD; j++)
-		  //Rprintf("%d,",bestpaths[j]);
-		  //Rprintf("\n");
-		}
-		if(gamma >= intgamma * 0.9999999999)
-		  countgamma++;
-		//Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
+		//Rprintf("\n");
+		if(phasepathdiffcount.size()<numdiff+1)
+		  phasepathdiffcount.resize(numdiff+1);
+		phasepathdiffcount[numdiff]++;
+		
 	  }
+	  
+	  std::vector<double> gweights = 
+		calcgraphweights(paths,pathrecord,origdemands,M);
+
+	  double gamma = calcgamma(gweights,vcapacity);
+
+	  if(gamma > bestgamma) {
+		bestgamma = gamma;
+		bestpaths = pathrecord;
+	  }
+	  if(gamma >= intgamma * 0.99999)
+		countgamma++;
+
+	  /*Rprintf("prevphasepathrecord\n");
+		
+	  for(int j=0; j<numD; j++) {
+		Rprintf("%ld,",prevphasepathrecord[j]);
+	  }
+	  Rprintf("\n");
+
+	  Rprintf("prevpathrecord\n");
+		
+	  for(int j=0; j<numD; j++) {
+		Rprintf("%ld,",prevpathrecord[j]);
+	  }
+	  Rprintf("\n");*/
+
+	  gweights = 
+		calcgraphweights(paths,prevpathrecord,origdemands,M);
+
+	  gamma = calcgamma(gweights,vcapacity);
+
+	  if(gamma > bestgamma) {
+		bestgamma = gamma;
+		bestpaths = pathrecord;
+	  }
+	  if(gamma >= intgamma * 0.99999)
+		countgamma++;
+	  
+	  std::vector<int> newpath(numD);
+	  for(int j=0;j<numD;j++) {
+		if(mrand48() > 0)
+		  newpath[j]=pathrecord[j];
+		else
+		  newpath[j]=prevphasepathrecord[j];
+		prevphasepathrecord[j]=pathrecord[j];
+	  }
+	  gweights = 
+		calcgraphweights(paths,newpath,origdemands,M);
+	  /*Rprintf("newpath\n");
+		
+	  for(int j=0; j<numD; j++) {
+		Rprintf("%ld,",newpath[j]);
+	  }
+	  Rprintf("\n");*/
+
+	  gamma = calcgamma(gweights,vcapacity);
+
+	  if(gamma > bestgamma) {
+		bestgamma = gamma;
+		bestpaths = newpath;
+	  }
+
+
+	  if(gamma >= intgamma * 0.99999)
+		countgamma++;
+	  //Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
 	  
 	}
 
@@ -1703,8 +1797,8 @@ public:
 	}
 	Rprintf("; countgamma=%ld\n",
 			countgamma);
-	Rprintf("; bestgamma=%lg\n",
-			 bestgamma);
+	Rprintf("******** bestgamma=%lg, intgamma=%lg, ratio=%lg\n",
+			bestgamma,intgamma,bestgamma/intgamma);
 	
 	UNPROTECT(1);
 	
@@ -1716,6 +1810,8 @@ public:
 	retlist.push_back(bestpaths,"bestpaths");
 	retlist.push_back(pathflows,"pathflows");
 	retlist.push_back(vlengths,"vlengths");
+	retlist.push_back(pathdiffcount,"pathdiffcount");
+	retlist.push_back(phasepathdiffcount,"phasepathdiffcount");
 	return Rcpp::wrap(retlist);
   }
 

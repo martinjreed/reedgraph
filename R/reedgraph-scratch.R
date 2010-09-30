@@ -1,4 +1,4 @@
-analyse.runs <- function(nums=NULL,maxattempts=3) {
+analyse.runs <- function(nums=NULL,maxattempts=1,progress=FALSE,e=0.005) {
 
   if(is.null(nums)) {
     files <- Sys.glob("run[0-9]*")
@@ -14,6 +14,8 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
   countzero <- 0
   neverfound <- 0
   faillist <- c()
+  numpaths <- 0
+  countruns <- 0
   for(file in files) {
 ##  for(i in seq(1:50)) {
 ##    file <- paste("run",i,".robj",sep="")
@@ -26,7 +28,7 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
         attempts <- 0
         countgamma <- 0
         while(countgamma == 0 && attempts < maxattempts) {
-          retlist <- analyse.inner(scenario,foundratio,file)
+          retlist <- analyse.inner(scenario,foundratio,file,progress=progress,e=e)
           countgamma <- retlist$res$countgamma
           attempts <- attempts + 1
           if(retlist$res$countgamma == 0)
@@ -36,6 +38,8 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
           neverfound <- neverfound +1
           faillist <- c(file,faillist)
         }
+        countruns <- countruns + 1
+        numpaths <- numpaths + retlist$numpaths
 
         foundratio <- retlist$foundratio
       }
@@ -46,6 +50,7 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
   cat("numzero=",countzero,
       "min=",min(foundratio)," mean=",mean(foundratio)," max=",max(foundratio),
       "\n")
+  cat("av numpaths=",numpaths/countruns,"\n")
   if(neverfound >0) {
     cat("Did not find",neverfound," for:\n")
     cat(gsub("[^0-9]+([0-9]+)[^0-9]+","\\1",faillist),"\n")
@@ -55,15 +60,51 @@ analyse.runs <- function(nums=NULL,maxattempts=3) {
 
 }
 
-analyse.inner <- function(scenario,foundratio,file) {
+analyse.inner.part1 <- function(nums,e=0.005) {
+
+  if(is.null(nums)) {
+    files <- Sys.glob("run[0-9]*")
+  } else {
+    files <- c()
+    for(num in nums) {
+      files <- c(files,Sys.glob(paste("run",num,".*",sep="")))
+    }
+  }
   
-  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=0.005,progress=TRUE,permutation="lowest")
+  files <- files[order(as.numeric(gsub("^.*run([0-9]*).*$","\\1",files,files)))]
+  for(file in files) {
+##  for(i in seq(1:50)) {
+##    file <- paste("run",i,".robj",sep="")
+    cat("----------------- Doing ",file,"\n")
+    load(file)
+    if(is.null(res$error)) {
+      scenario <- res$scenario
+      if(scenario$intgammalist[[1]] > 0.0) {
+        results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=e,progress=TRUE,permutation="lowest")
+
+      }
+    }
+  }
+  results$scenario <- scenario
+  return(results)
+}
+
+analyse.inner <- function(scenario,foundratio,file,progress,e) {
+  
+  results <- rg.minimum.congestion.flow(scenario$g,scenario$commr,e=e,progress=progress,permutation="lowest")
+  #res <- rg.try.single.demands(scenario$g,scenario$commr,e=0.005,permutation="lowest",
+  #                             scenario=scenario,progress=progress)
+  #numpaths <- rg.count.paths(res$demands)
+
+  numpaths <- rg.count.paths(results$demands)
+
   res <- rg.max.concurrent.flow.int.c(
                                       scenario$g,
                                       results$demands,
-                                      e=0.005,
+                                      e=e,
+                                      #eInternal=0.001,
                                       scenario=scenario,
-                                      progress=TRUE,
+                                      progress=progress,
                                       permutation="lowest"
                                       )
   res$scenario <- scenario
@@ -71,9 +112,12 @@ analyse.inner <- function(scenario,foundratio,file) {
   cat(file,":",res$countgamma,"/",res$phases,
       " gamma=",res$scenario$intgammalist[[1]],
       "best found=",res$bestgamma,"\n")
+  cat("pathdifcount=",res$pathdiffcount,"\n")
+  cat("phasepathdiffcount=",res$phasepathdiffcount,"\n")
   retlist <- list()
   retlist$res <- res
   retlist$foundratio <- foundratio
+  retlist$numpaths <- numpaths
   return(retlist)
 }
 
@@ -83,7 +127,7 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
   for(i in 1:length(demands)) {
     tmp <- list()
     tmp[["1"]] <- demands[[i]]
-    results <- rg.minimum.congestion.flow(g,tmp,e=e,progress=progress,permutation=permutation)
+    results <- rg.minimum.congestion.flow(g,tmp,e=0.01,progress=progress,permutation=permutation)
     newdemands[[i]] <- results$demands[[1]]
   }
   res <- rg.max.concurrent.flow.int.c(g,newdemands,e=e,progress=progress,scenario=scenario,permutation=permutation)
@@ -98,12 +142,16 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
 ###              "lowest" done in lowest cost (lowest dual path) order
 ###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,scenario,permutation="fixed") {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario,permutation="fixed") {
 
   ## note this is not the dual value
   calcD <- function() {
     sum(vcapacity*vlength)
   }
+
+  if(is.null(eInternal))
+    eInternal <- e
+
   if(is.numeric(permutation))
     permutation <- permutation - 1
   else if(permutation == "fixed")
@@ -134,6 +182,8 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
     rdemandpaths[[d]] <- list()
     demands.paths <- append(demands.paths,d-1)
     demands.paths <- append(demands.paths,length(demands[[d]]$paths))
+    missing <- TRUE
+
     for(p in 1:length(demands[[d]]$paths)) {
       pathi <-
         as.integer(strsplit
@@ -142,13 +192,15 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
       if(identical(names(demands[[d]]$paths[p]),
                    names(scenario$intdemands[[d]]$paths))) {
         cat("best path in",d,names(scenario$intdemands[[d]]$paths),", ",p,"\n")
-
+        missing <- FALSE
         bestpaths[d] <- p
       }
       rdemandpaths[[d]][[p]] <- pathi
       demands.paths <- append(demands.paths,length(pathi))
       demands.paths <- append(demands.paths,pathi)
     }
+    if(missing)
+      cat("best path in",d,"is MISSING!\n")
 
   }
   print(bestpaths)
@@ -178,8 +230,9 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
   
   m <- length(rg.edgeL(g))
 
-  doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
-
+  # old for ori
+  # doubreq <- 2 * ceiling(1/e * log(m/(1-e),base=(1+e)))
+  doubreq <- 2* ceiling(log(1.0/delta,1+eInternal))
   if(progress != FALSE) {
     pb <- txtProgressBar(title = "progress bar", min = 0,
                          max = doubreq, style=3)
@@ -192,6 +245,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
                    vdemands,
                    vcapacity,
                    e,
+                   eInternal,
                    progress,
                    pb,
                    bestgamma,
@@ -250,8 +304,11 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
         if(foundbestpaths[[d]] == p)
           cat("F")
         
-        #if(bestpaths[[d]] == p)
-         # cat("O")
+        if(identical(names(demands[[d]]$paths[p]),
+                     names(scenario$intdemands[[d]]$paths))) {
+                                        #if(bestpaths[[d]] == p)
+          cat("X")
+        }
       }
       cat("\n")
     }
@@ -261,7 +318,9 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progres
                  lambda=lambda,phases=retlist$totalphases,e=e,vlength=retlist$vlengths,
                  countgamma=retlist$countgamma,
                  bestgamma=retlist$bestgamma,
-                 bestpaths=retlist$bestpaths+1)
+                 bestpaths=retlist$bestpaths+1,
+                 pathdiffcount=retlist$pathdiffcount,
+                 phasepathdiffcount=retlist$phasepathdiffcount)
 
   
   return(retval)
@@ -1044,7 +1103,7 @@ rg.fleischer.max.concurrent.flow.restricted.test <- function(g,demands,e=0.1,upd
   }
 
   
-  doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
+  doubreq <- 2 * ceiling(1/e * log(m/(1-e),base=(1+e)))
   ## updatepb used to measure progress as percent
   updatepb <- as.integer(ceiling(doubreq / 100.0))
 
@@ -1227,7 +1286,7 @@ rg.max.concurrent.flow.capacity.restricted.c <- function(g,demands,e=0.1,updatef
   
   m <- length(rg.edgeL(g))
 
-  doubreq <- ceiling(2/e * log(m/(1-e),base=(1+e)))
+  doubreq <- 2 * ceiling(1/e * log(m/(1-e),base=(1+e)))
 
   if(progress != FALSE) {
     pb <- txtProgressBar(title = "progress bar", min = 0,
@@ -1282,3 +1341,27 @@ rg.max.concurrent.flow.capacity.restricted.c <- function(g,demands,e=0.1,updatef
 }
 
 
+### Compute the number of combinations of selecting paths from two path sets
+### input
+### Given c ways of chosing alternative paths from another path set size m
+### there are ( n )
+###           ( m )    ways (Binomial coeficient)
+### so for m = 0 ... n numbers chosen (choose none, then two etc) we have
+### number of comb = Sum_0^n
+rg.num.path.comb <- function(n) {
+  sum <- 0
+  for(m in 0:n)
+    sum <- sum + choose(n,m)
+  return(sum)
+}
+
+rg.dual.primal.ratio <- function(numedges,e,eInternal=NULL)  {
+  if(is.null(eInternal))
+    eInternal <- e
+  
+  delta <- (numedges / (1-e)) ^ (-1/e)
+
+  ratio <- e * log(1/delta,1+e) / ( (1-e)*log((1-e)/(numedges*delta)))
+  return(ratio)
+
+}

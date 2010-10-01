@@ -134,7 +134,7 @@ SEXP rg_test_c(SEXP v) {
 
 
   class rg_demand {
-	public:
+  public:
 	double flow;
 	rgVertex source;
 	rgVertex sink;
@@ -143,8 +143,8 @@ SEXP rg_test_c(SEXP v) {
   };
 
   int updateExplicitFlow(rg_demand& demand,
-										std::vector<rgVertex>& penult,
-										double flow) {
+						 std::vector<rgVertex>& penult,
+						 double flow) {
 	
 	rgVertex f,p;
 	rgVertex source = demand.source;
@@ -201,20 +201,20 @@ SEXP rg_test_c(SEXP v) {
 	return beta;
   }
   SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
-										  SEXP num_edges_in,
-										  SEXP R_edges_in,
-										  SEXP R_weights_in,
-										  SEXP capacities_in,
-										  SEXP num_demands_in,
-										  SEXP demands_sources_in,
-										  SEXP demands_sinks_in,
-										  SEXP demands_in,
-										  SEXP Re,
-										  SEXP Rupdateflow,
-										  SEXP pb,
-										  SEXP env,
-										  SEXP Rprogress
-										  ) {
+											   SEXP num_edges_in,
+											   SEXP R_edges_in,
+											   SEXP R_weights_in,
+											   SEXP capacities_in,
+											   SEXP num_demands_in,
+											   SEXP demands_sources_in,
+											   SEXP demands_sinks_in,
+											   SEXP demands_in,
+											   SEXP Re,
+											   SEXP Rupdateflow,
+											   SEXP pb,
+											   SEXP env,
+											   SEXP Rprogress
+											   ) {
 	using namespace boost;
 	bool progress=false;
 	bool updateflow=asLogical(Rupdateflow);
@@ -459,7 +459,7 @@ SEXP rg_test_c(SEXP v) {
   }
 
   std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
-					   std::vector<double>& vlengths) {
+											 std::vector<double>& vlengths) {
 	int numpaths = paths.size();
 	std::vector<int>::iterator vi;
 	double sum=0.0;
@@ -582,20 +582,20 @@ SEXP rg_test_c(SEXP v) {
   }
 
   // these two probably obsolete, but keep for future sort of vector<pair>
-struct less_cost {
-public:
-  bool operator()(const std::pair<int, double> a,
-				  const std::pair<int, double> b) {
-	return (a.second < b.second);
-  }
-};
-struct great_cost {
-public:
-  bool operator()(const std::pair<int, double> a,
-				  const std::pair<int, double> b) {
-	return (a.second > b.second);
-  }
-};
+  struct less_cost {
+  public:
+	bool operator()(const std::pair<int, double> a,
+					const std::pair<int, double> b) {
+	  return (a.second < b.second);
+	}
+  };
+  struct great_cost {
+  public:
+	bool operator()(const std::pair<int, double> a,
+					const std::pair<int, double> b) {
+	  return (a.second > b.second);
+	}
+  };
 
 
 
@@ -1100,7 +1100,7 @@ public:
 		UNPROTECT(1);
 	  }	  
 	  if(permutation[0] == -2) {
-	  // sort demands on lowest cost path first
+		// sort demands on lowest cost path first
 		for(int x=0;x<num_dem;x++) {
 		  rg_demand demand=demands[x];
 		  rgVertex source = demand.source;
@@ -1260,7 +1260,7 @@ public:
 		}
 		Rprintf(": %ld\n",pathCount[i][j]);
 	  }
-	  }
+	}
 #endif
 
 	// need to return:
@@ -1338,7 +1338,7 @@ public:
 
   inline std::vector<double> 
   calcgraphweights(std::vector< std::vector< std::vector<int> > > &paths,
-				    std::vector<int> &pathrecord,
+				   std::vector<int> &pathrecord,
 				   std::vector<double> &demands,
 				   int M) {
 	int numD=demands.size();
@@ -1552,7 +1552,7 @@ public:
 	  if(permutation[0] == -2) {
 		// need to do this as it may be resized later if sort_order is true
 		costpair.resize(numD);
-	  // sort demands on lowest cost path first
+		// sort demands on lowest cost path first
 		std::vector< std::pair<int,double> >::iterator pit,pend;
 		pend=costpair.end();
 		int i=0;
@@ -1603,19 +1603,19 @@ public:
 		  // could use this
 		  /*std::pair<long, double> ppair = 
 			findshortestpathcostopt(paths[i],
-									vlengths,
-									vcapacity,
-									weights,
-									vdemands[i]);*/
+			vlengths,
+			vcapacity,
+			weights,
+			vdemands[i]);*/
 		  std::pair<long, double> ppair = 
 			findshortestpathcost(paths[i],
-			vlengths);
+								 vlengths);
 		  /*
-		  Rprintf("%ld, %lg, %ld, %lg, %lg\n",
-				  tmppair.first,
-				  tmppair.second,
-				  ppair.first,
-				  ppair.second,tmppair.second - ppair.second);*/
+			Rprintf("%ld, %lg, %ld, %lg, %lg\n",
+			tmppair.first,
+			tmppair.second,
+			ppair.first,
+			ppair.second,tmppair.second - ppair.second);*/
 
 		  int p = ppair.first;
 		  //int p = findshortestpath(paths[i],vlengths);
@@ -1643,11 +1643,11 @@ public:
 
 
 		  if(demand <=0) {
-		  // while this records only the first time
-		  // which one is best?
-		  //if(first_time) {
+			// while this records only the first time
+			// which one is best?
+			//if(first_time) {
 			for(vi=paths[i][p].begin(); vi != ve; vi++) {
-				weights[*vi] += origdemands[i];
+			  weights[*vi] += origdemands[i];
 			}
 		  } 
 		  int sz = paths[i][p].size();
@@ -1734,17 +1734,17 @@ public:
 
 	  /*Rprintf("prevphasepathrecord\n");
 		
-	  for(int j=0; j<numD; j++) {
+		for(int j=0; j<numD; j++) {
 		Rprintf("%ld,",prevphasepathrecord[j]);
-	  }
-	  Rprintf("\n");
+		}
+		Rprintf("\n");
 
-	  Rprintf("prevpathrecord\n");
+		Rprintf("prevpathrecord\n");
 		
-	  for(int j=0; j<numD; j++) {
+		for(int j=0; j<numD; j++) {
 		Rprintf("%ld,",prevpathrecord[j]);
-	  }
-	  Rprintf("\n");*/
+		}
+		Rprintf("\n");*/
 
 	  gweights = 
 		calcgraphweights(paths,prevpathrecord,origdemands,M);
@@ -1770,10 +1770,10 @@ public:
 		calcgraphweights(paths,newpath,origdemands,M);
 	  /*Rprintf("newpath\n");
 		
-	  for(int j=0; j<numD; j++) {
+		for(int j=0; j<numD; j++) {
 		Rprintf("%ld,",newpath[j]);
-	  }
-	  Rprintf("\n");*/
+		}
+		Rprintf("\n");*/
 
 	  gamma = calcgamma(gweights,vcapacity);
 

@@ -1,3 +1,33 @@
+rg.dfs <- function(g) {
+  data <- list()
+  data$color <- rep(0,length(nodes(g))+1)
+  data$pred <- rep(NULL,length(nodes(g)))
+  for (u in nodes(g)) {
+    cat("I am visiting", u,"\n")
+    if(data$color[as.integer(u)] == 0 ) {
+      data <- mydfs.visit(g,u,data)
+    }
+  }
+}
+
+rg.dfs.visit <- function(g,u,data) {
+  data$color[as.integer(u)] <- 1
+  print(data$color[as.integer(u)])
+  for (v in edges(g,u)[[1]]) {
+    cat("testing edge:",v,":\n")
+    if(data$color[as.integer(v)] == 0 ) {
+      data$pred[as.integer(v)] <- as.integer(u)
+      data <- mydfs.visit(g,v,data)
+    }
+  }
+  
+  data$color[as.integer(u)] <- 2
+  print(data$color[as.integer(u)])
+  cat("I have finished at ",u,"\n")
+  return(data)
+}
+
+
 analyse.runs <- function(nums=NULL,maxattempts=1,progress=FALSE,e=0.005) {
 
   if(is.null(nums)) {
@@ -142,7 +172,7 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
 ###              "lowest" done in lowest cost (lowest dual path) order
 ###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario,permutation="fixed") {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="fixed") {
 
   ## note this is not the dual value
   calcD <- function() {
@@ -161,7 +191,6 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
   else if(permutation == "lowest")
     permutation <- -2
 
-  bestgamma=scenario$intgammalist[[1]]
   savedemands <- demands
   vdemands <- as.double(lapply(demands,"[[","demand"))
   vcapacity <- as.double(edgeData(g,attr="capacity"))
@@ -174,36 +203,43 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
 
   demands.paths <- as.integer(c())
   bestpaths <- as.integer(c())
+  rdemandpaths <- list();
+
+  if(!is.null(scenario)) {
+    bestgamma=scenario$intgammalist[[1]]
+    for(d in 1:length(demands)) {
+      rdemandpaths[[d]] <- list()
+      demands.paths <- append(demands.paths,d-1)
+      demands.paths <- append(demands.paths,length(demands[[d]]$paths))
+      missing <- TRUE
+      
+      for(p in 1:length(demands[[d]]$paths)) {
+        pathi <-
+          as.integer(strsplit
+                     (names(demands[[d]]$paths[p]),"|",fixed=TRUE)[[1]])
+        pathi <- pathi -1
+        if(identical(names(demands[[d]]$paths[p]),
+                     names(scenario$intdemands[[d]]$paths))) {
+          cat("best path in",d,names(scenario$intdemands[[d]]$paths),", ",p,"\n")
+          missing <- FALSE
+          bestpaths[d] <- p
+        }
+        rdemandpaths[[d]][[p]] <- pathi
+        demands.paths <- append(demands.paths,length(pathi))
+        demands.paths <- append(demands.paths,pathi)
+      }
+      if(missing)
+        cat("best path in",d,"is MISSING!\n")
+      
+    }
+    print(bestpaths)
+  } else {
+    bestgamma <- Inf
+  }
   ## code the paths as integers
   ## [demandno(e.g=1) numdempaths lengthpath1 path1[1] path1[2] ...
   ##  lengthpath2 path2[1] path2[2]....demandno(e.g=2)....]
-  rdemandpaths <- list();
-  for(d in 1:length(demands)) {
-    rdemandpaths[[d]] <- list()
-    demands.paths <- append(demands.paths,d-1)
-    demands.paths <- append(demands.paths,length(demands[[d]]$paths))
-    missing <- TRUE
 
-    for(p in 1:length(demands[[d]]$paths)) {
-      pathi <-
-        as.integer(strsplit
-                   (names(demands[[d]]$paths[p]),"|",fixed=TRUE)[[1]])
-      pathi <- pathi -1
-      if(identical(names(demands[[d]]$paths[p]),
-                   names(scenario$intdemands[[d]]$paths))) {
-        cat("best path in",d,names(scenario$intdemands[[d]]$paths),", ",p,"\n")
-        missing <- FALSE
-        bestpaths[d] <- p
-      }
-      rdemandpaths[[d]][[p]] <- pathi
-      demands.paths <- append(demands.paths,length(pathi))
-      demands.paths <- append(demands.paths,pathi)
-    }
-    if(missing)
-      cat("best path in",d,"is MISSING!\n")
-
-  }
-  print(bestpaths)
   demandpaths <- list()
   j <- 1
   for(d in demands) {
@@ -249,7 +285,6 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
                    progress,
                    pb,
                    bestgamma,
-                   bestpaths-1,
                    environment(),
                    permutation
                    );
@@ -284,7 +319,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
     
   gflow <- rg.max.concurrent.flow.graph(gdual,demands)
 
-  if(TRUE) {
+  if(FALSE) {
     for(d in 1:length(demandpaths)) {
       cat("demand ",d,": ")
       for(p in 1:length(demandpaths[[d]])) {
@@ -320,7 +355,10 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
                  bestgamma=retlist$bestgamma,
                  bestpaths=retlist$bestpaths+1,
                  pathdiffcount=retlist$pathdiffcount,
-                 phasepathdiffcount=retlist$phasepathdiffcount)
+                 phasepathdiffcount=retlist$phasepathdiffcount,
+                 gammavals=retlist$gammavals,
+                 betavals=retlist$betavals,
+                 lambdavals=retlist$lambdavals)
 
   
   return(retval)
@@ -387,16 +425,16 @@ rg.test.idea <- function(maxtime=1.0,N=9,L=10,filebase=NULL) {
 ###         output$results - from running rg.minimum.congestion.flow()
 ###         output$commr - the commodities (scaled to give gamma a reasonable value)
 ###         output$comm - the original commodities
-rg.gen.random.scenario <- function(N=6,L=8) {
+rg.gen.random.scenario <- function(N=6,L=8,target=0.9) {
   g <- rg.generate.random.graph(N,3,4)
   M <- length(edgeMatrix(g))/2
   comm <- rg.gen.demands(g,L,runif(L,1,5))
   g <- rg.set.capacity(g,runif(M,5,10))
   g <- rg.set.weight(g,0.0)
-  results <- rg.minimum.congestion.flow(g,comm,e=0.01)
+  results <- rg.minimum.congestion.flow(g,comm,e=0.02)
   ## need to customize this
-  commr <- rg.rescale.demands(comm,(1+results$gamma)*0.9)
-  results <- rg.minimum.congestion.flow(g,commr,e=0.01)
+  commr <- rg.rescale.demands(comm,(1+results$gamma)*target)
+  results <- rg.minimum.congestion.flow(g,commr,e=0.02)
   runtotal <- 1
   for(i in results$demands) {
     val <- length(names(i$paths))
@@ -1363,5 +1401,29 @@ rg.dual.primal.ratio <- function(numedges,e,eInternal=NULL)  {
 
   ratio <- e * log(1/delta,1+e) / ( (1-e)*log((1-e)/(numedges*delta)))
   return(ratio)
+
+}
+
+rg.run.reed <- function(scenario) {
+  g <- scenario$g
+  demands <- scenario$commr
+  results <- rg.minimum.congestion.flow(g,demands,e=0.02,progress=TRUE,permutation="lowest")
+  res <- rg.max.concurrent.flow.int.c(g,results$demands,e=0.02,progress=TRUE,permutation="lowest")
+  cat("Gamma = ",res$bestgamma,"\n")
+}
+
+rg.run.sp <- function(scenario) {
+  g <- scenario$g
+  demands <- scenario$commr
+  res <- rg.sp.max.concurrent.flow(g,demands)
+  cat("Gamma = ",res$gamma,"\n")
+}
+
+rg.run.alice <- function() {
+  for(i in 10:20) {
+    s <- rg.gen.random.scenario(N=i,L=2*i,target=0.2)
+    rg.run.reed(s)
+    rg.run.sp(s)
+  }
 
 }

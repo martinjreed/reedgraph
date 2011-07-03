@@ -252,19 +252,20 @@ rg.relabel <- function(myg) {
 ### input graphNEL, path vector of integer, val is  the amount to add
 ### this is very inefficient if called repeatedly, better to copy
 ### and paste "Inline" if done many times
-rg.addto.weight.on.path <- function(g,path,val) {
+rg.addto.weight.on.path <- function(g,path,val,attr="weight") {
     if(length(path) == 1) {
-      edgeData(g,as.character(path[1]),as.character(path[2]),"weight") <-
-      edgeData(g,as.character(path[1]),as.character(path[2]),"weight") +val
+      edgeData(g,as.character(path[1]),as.character(path[2]),attr) <-
+      edgeData(g,as.character(path[1]),as.character(path[2]),attr) +val
   } else {
     
     fromlist <- path[1:{length(path)-1}]
     tolist <- path[2:{length(path)}]
-    newvals <- as.double(edgeData(g,as.character(fromlist),as.character(tolist),"weight")) + val
-    edgeData(g,as.character(fromlist),as.character(tolist),"weight") <- newvals
+    newvals <- as.double(edgeData(g,as.character(fromlist),as.character(tolist),attr)) + val
+    edgeData(g,as.character(fromlist),as.character(tolist),attr) <- newvals
   }
   return(g)
 }
+
 
 ### sets the weight attribute on each edge
 ### in path to val WARNING THIS WILL OVERIDE OTHER PATHS THAT HAVE SET
@@ -318,12 +319,58 @@ rg.sp.max.concurrent.flow <- function(g,demands) {
   c <- as.double(edgeData(gsol,attr="capacity"))
   lambda <- min(c/f)
 
+  gamma <- min((c-f)/c)
     
-  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
+  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
     
-  gsol <- rg.max.concurrent.flow.graph(gsol,demands)
+  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
   
-  retval <-  list(demands=demands,gflow=gsol,lambda=lambda)
+  retval <-  list(demands=demands,gflow=gsol,lambda=lambda,gamma=gamma)
+    
+  return(retval)
+}
+
+
+### Compute the multicommodity flow in a graph using naive shortest
+### path g graph of type graphNEL with the edge weight variable used
+### for the shortest path and capacities ignored (ie it may overbook
+### an edge)
+### demands: a list each element is a list [source, sink, demand]
+rg.sp.max.concurrent.flow.residual <- function(g,demands) {
+
+
+  for(c in names(demands)) {
+    demands[[c]]$flow <- 0
+  }
+
+  
+  gsol <- g
+  g.sp <- list()
+  
+  gsol <- rg.set.all.graph.edge.weights(gsol)
+  
+  ccount <- 1
+  for(i in demands) {
+    ## calculate dijkstra.sp if we do not have one for this vertex
+    if(is.null(g.sp[[i$source]]))
+      g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
+      path <- extractPath(i$source,i$sink,g.sp[[i$source]])
+      gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+      demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
+      ccount <- ccount + 1
+  }
+  
+  f <- as.double(edgeData(gsol,attr="weight"))
+  c <- as.double(edgeData(g,attr="capacity"))
+  lambda <- min(c/f)
+
+  gamma <- min((c-f)/c)
+    
+  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
+    
+  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
+  
+  retval <-  list(demands=demands,gflow=gsol,lambda=lambda,gamma=gamma)
     
   return(retval)
 }

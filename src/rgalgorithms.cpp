@@ -2,15 +2,15 @@
 
 extern "C" {
 
-SEXP rg_test_c(SEXP v) {
-  //  using namespace Rcpp;
-  //using namespace std;
-
-  RcppResultSet rs;
-  rs.add("sum",1);
-  return rs.getReturnList();
-}
-
+  SEXP rg_test_c(SEXP v) {
+	//  using namespace Rcpp;
+	//using namespace std;
+	
+	RcppResultSet rs;
+	rs.add("sum",1);
+	return rs.getReturnList();
+  }
+  
   void rg_cversion() {
 	Rprintf("Version 1.1");
   }
@@ -1366,7 +1366,53 @@ SEXP rg_test_c(SEXP v) {
 	}
 	return(gamma);
   }
-  
+
+  double calcbeta_restricted(std::vector< std::vector< std::vector<int> > > &paths,
+							 std::vector<double> &lengths,
+							 std::vector<double> &demands,
+							 std::vector<double> &capacity
+							 ) {
+	double alpha=0.0;
+	long numD=paths.size();
+	long M=lengths.size();
+	for(int i=0; i< numD; i++) {
+	  std::pair<int,double> tmp=findshortestpathcost(paths[i],lengths);
+	  alpha+=demands[i] * tmp.second;
+	}
+	double D=0;
+	for(int i=0;i<M;i++) {
+	  D+=capacity[i]*lengths[i];
+	}
+
+	double beta = D/alpha;
+	return(beta);
+
+  }
+  double calcbeta_int(std::vector< std::vector< std::vector<int> > > &paths,
+					  std::vector<double> &lengths,
+					  std::vector<double> &demands,
+					  std::vector<double> &capacity,
+					  std::vector<int> pathsselected
+					  ) {
+	double alpha=0.0;
+	long numD=paths.size();
+	long M=lengths.size();
+	for(int i=0; i< numD; i++) {
+	  double cost=0;
+	  for(int j=0; j< paths[i][pathsselected[i]].size(); j++) {
+		cost += lengths[paths[i][pathsselected[i]][j]];
+	  }
+	  alpha+=demands[i] * cost;
+	}
+	double D=0;
+	for(int i=0;i<M;i++) {
+	  D+=capacity[i]*lengths[i];
+	}
+
+	double beta = D/alpha;
+	return(beta);
+
+  }
   SEXP rg_max_concurrent_flow_int_c
   (
    SEXP RRdemandpaths,
@@ -1377,7 +1423,6 @@ SEXP rg_test_c(SEXP v) {
    SEXP Rprogress,
    SEXP pb,
    SEXP Rintgamma,
-   SEXP Rbestpaths,
    SEXP env,
    SEXP Rpermutation
    ) {
@@ -1401,7 +1446,9 @@ SEXP rg_test_c(SEXP v) {
 	std::vector< std::vector< std::vector<int> > >::iterator dit;
 	std::vector< std::vector<int> >::iterator pit;
 	std::vector<int>::iterator eit;
-
+	std::vector<double> gammavals;
+	std::vector<double> lambdavals;
+	std::vector<double> betavals;
 	Rcpp::List demands(RRdemandpaths);
 	int sz = demands.size();
 	paths.resize(sz);
@@ -1719,87 +1766,91 @@ SEXP rg_test_c(SEXP v) {
 		phasepathdiffcount[numdiff]++;
 		
 	  }
-	  
-	  std::vector<double> gweights = 
-		calcgraphweights(paths,pathrecord,origdemands,M);
 
-	  double gamma = calcgamma(gweights,vcapacity);
-
-	  if(gamma > bestgamma) {
-		bestgamma = gamma;
-		bestpaths = pathrecord;
-	  }
-	  if(gamma >= intgamma * 0.99999)
-		countgamma++;
-
-	  /*Rprintf("prevphasepathrecord\n");
+	  betavals.push_back(calcbeta_restricted(paths,vlengths,vdemands,vcapacity));
+	  lambdavals.push_back(calcbeta_int(paths,vlengths,vdemands,vcapacity,pathrecord));
+	  std::vector<double> gweights;
+	  bool using_normal_gamma=true;
+	  bool using_prev_path_gamma=false;
+	  bool using_new_path_gamma=false;
+	  double gamma;
+	  if(using_normal_gamma) {
+		gweights = 
+		  calcgraphweights(paths,pathrecord,origdemands,M);
 		
-		for(int j=0; j<numD; j++) {
-		Rprintf("%ld,",prevphasepathrecord[j]);
-		}
-		Rprintf("\n");
-
-		Rprintf("prevpathrecord\n");
+		gamma = calcgamma(gweights,vcapacity);
+		//gammavals.push_back(gamma);
 		
-		for(int j=0; j<numD; j++) {
-		Rprintf("%ld,",prevpathrecord[j]);
+		if(gamma > bestgamma) {
+		  bestgamma = gamma;
+		  bestpaths = pathrecord;
 		}
-		Rprintf("\n");*/
-
-	  gweights = 
-		calcgraphweights(paths,prevpathrecord,origdemands,M);
-
-	  gamma = calcgamma(gweights,vcapacity);
-
-	  if(gamma > bestgamma) {
-		bestgamma = gamma;
-		bestpaths = pathrecord;
+		if(gamma >= intgamma * 0.99999)
+		  countgamma++;
+		gammavals.push_back(gamma);
 	  }
-	  if(gamma >= intgamma * 0.99999)
-		countgamma++;
-	  
-	  std::vector<int> newpath(numD);
-	  for(int j=0;j<numD;j++) {
-		if(mrand48() > 0)
-		  newpath[j]=pathrecord[j];
-		else
-		  newpath[j]=prevphasepathrecord[j];
-		prevphasepathrecord[j]=pathrecord[j];
-	  }
-	  gweights = 
-		calcgraphweights(paths,newpath,origdemands,M);
-	  /*Rprintf("newpath\n");
+
+	  if(using_prev_path_gamma) {
+		gweights = 
+		  calcgraphweights(paths,prevpathrecord,origdemands,M);
 		
-		for(int j=0; j<numD; j++) {
-		Rprintf("%ld,",newpath[j]);
+		gamma = calcgamma(gweights,vcapacity);
+		
+		if(gamma > bestgamma) {
+		  bestgamma = gamma;
+		  bestpaths = pathrecord;
 		}
-		Rprintf("\n");*/
-
-	  gamma = calcgamma(gweights,vcapacity);
-
-	  if(gamma > bestgamma) {
-		bestgamma = gamma;
-		bestpaths = newpath;
+		if(gamma >= intgamma * 0.99999)
+		  countgamma++;
+		gammavals.push_back(gamma);
 	  }
 
-
-	  if(gamma >= intgamma * 0.99999)
-		countgamma++;
+	  if(using_new_path_gamma) {
+		std::vector<int> newpath(numD);
+		for(int j=0;j<numD;j++) {
+		  if(drand48() > 0.85)
+			newpath[j]=pathrecord[j];
+		  else
+			//newpath[j]=prevphasepathrecord[j];
+			newpath[j]=bestpaths[j];
+		  prevphasepathrecord[j]=pathrecord[j];
+		}
+		gweights = 
+		  calcgraphweights(paths,newpath,origdemands,M);
+		/*Rprintf("newpath\n");
+		  
+		  for(int j=0; j<numD; j++) {
+		  Rprintf("%ld,",newpath[j]);
+		  }
+		  Rprintf("\n");*/
+		
+		gamma = calcgamma(gweights,vcapacity);
+		
+		if(gamma > bestgamma) {
+		  bestgamma = gamma;
+		  bestpaths = newpath;
+		}
+		
+		
+		if(gamma >= intgamma * 0.99999)
+		  countgamma++;
+		gammavals.push_back(gamma);
+	  }
 	  //Rprintf("gamma %lg, matches int gamma of %lg\n",gamma, intgamma);
-	  
 	}
 
 	if(progress != false)
 	  Rprintf("\n");
 
-	for(i=0;i<countunderv.size();i++) {
-	  Rprintf("%ld,",countunderv[i]);
+	if(intgamma < DBL_MAX) {
+	  for(i=0;i<countunderv.size();i++) {
+		Rprintf("%ld,",countunderv[i]);
+	  }
+	  Rprintf("; countgamma=%ld\n",
+			  countgamma);
+	  Rprintf("******** bestgamma=%lg, intgamma=%lg, ratio=%lg\n",
+			  bestgamma,intgamma,bestgamma/intgamma);
 	}
-	Rprintf("; countgamma=%ld\n",
-			countgamma);
-	Rprintf("******** bestgamma=%lg, intgamma=%lg, ratio=%lg\n",
-			bestgamma,intgamma,bestgamma/intgamma);
-	
 	UNPROTECT(1);
 	
 	Rcpp::List retlist;
@@ -1812,6 +1863,9 @@ SEXP rg_test_c(SEXP v) {
 	retlist.push_back(vlengths,"vlengths");
 	retlist.push_back(pathdiffcount,"pathdiffcount");
 	retlist.push_back(phasepathdiffcount,"phasepathdiffcount");
+	retlist.push_back(gammavals,"gammavals");
+	retlist.push_back(betavals,"betavals");
+	retlist.push_back(lambdavals,"lambdavals");
 	return Rcpp::wrap(retlist);
   }
 
@@ -1819,3 +1873,6 @@ SEXP rg_test_c(SEXP v) {
 
 }
 
+/* Local Variables:     */
+/* outline-regexp:"  ." */
+/* End:                 */

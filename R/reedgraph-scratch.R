@@ -1,3 +1,463 @@
+### combinations possible with
+### k hash functions, m length
+rg.bloom.comb <- function(k,m) {
+
+  prod <- 1.0
+  for(i in m:(m-k+1)) {
+    print(prod)
+    prod <- i * prod
+  }
+  return(prod)
+}
+
+### estimate according to Bose 2007, not quite correct
+### k hash functions, m length, n items in filter
+### this is a strict lower bound for k>=2
+rg.bloom.false <- function(k,m,n) {
+  return((1-(1-1/m)^(k*n))^k)
+}
+
+### optimium k for Bloom filter
+rg.bloom.optimum.k <- function(m,n) {
+  return(log(2) * m /n)
+}
+
+rg.analyse.tests <- function(res) {
+
+  var <- data.frame()
+  for(N in unique(res$N)) {
+    var <- rbind(var,lapply(res,subset,res$N==N & res$L==res$N * res$N))
+  }
+  return(var)
+}
+
+### Returns a graph with number of flows in each edge
+rg.count.edge.flows <- function(g,demands) {
+  for(i in 1:length(demands)) {
+    for(j in names(demands[[i]]$paths)) {
+      ##results$demands[[i]]$paths <- 1.0
+      demands[[i]]$paths[[j]] <- 1.0
+    }
+  }
+  gcount <- rg.max.concurrent.flow.graph(g,demands)
+  return(gcount)
+}
+
+rg.path.lengths <- function(demands) {
+  lengths <- c()
+  for(i in demands) {
+    for(j in names(i$paths)) {
+      lengths <- c(lengths,length(strsplit(j,"\\|")[[1]])-1)
+    }
+  }
+  return(lengths)
+}
+
+
+rg.run.tests <- function(min=8,max=20,averages=10,e=0.05,target=0.1,dirname=NULL) {
+  vecN <- c()
+  vecL <- c()
+  vecSPgamma <- c()
+  vecFLOWgamma <- c()
+  vecINTgamma <- c()
+  vecFLOWtime <- c()
+  vecMAXmpls <- c()
+  vecMAXbf <- c()
+  run <- 1
+  
+  for(N in min:max ) {
+    for(a in 1:averages) {
+      cat("\nN=",N, "\n")
+
+      scenario <- rg.test.int.versus.nonint.flow(N=N,L=NULL,target=target,e=e)
+      if( ! is.null(dirname) ) {
+        save(scenario,file=paste(dirname,"/",run,".robj",sep=""))
+        cat("writing",paste(dirname,"/",run,".robj",sep=""),"\n")
+      }
+      vecN <- c(vecN,N)
+      vecSPgamma <- c(vecSPgamma,scenario$sp.results$gamma)
+      vecFLOWgamma <- c(vecFLOWgamma,scenario$flow.results$gamma)
+      vecINTgamma <- c(vecINTgamma,scenario$int.results$bestgamma)
+      vecFLOWtime <- c(vecFLOWtime,scenario$flow.results$runtime)
+      vecMAXmpls <- c(vecMAXmpls,scenario$flow.results$max.mpls)
+      vecMAXbf <- c(vecMAXbf,scenario$flow.results$max.bf)
+      run <- run +1
+    }
+    
+  }
+  cat("\n")
+  results <- data.frame(N=vecN,
+                        SPgamma=vecSPgamma,
+                        INTgamma=vecINTgamma,
+                        FLOWgamma=vecFLOWgamma,
+                        FLOWtime=vecFLOWtime,
+                        MAXmpls=vecMAXmpls,
+                        MAXbf=vecMAXbf
+                        )
+  
+  return(results)
+}
+
+rg.run.tests.target <- function(min=0,max=1,step=0.1,averages=10,e=0.05,N=20,dirname=NULL) {
+  vecTarget <- c()
+  vecL <- c()
+  vecSPgamma <- c()
+  vecFLOWgamma <- c()
+  vecINTgamma <- c()
+  vecFLOWtime <- c()
+  vecMAXmpls <- c()
+  vecMAXbf <- c()
+  run <- 1
+  
+  for(target in seq(min,max,step)) {
+    for(a in 1:averages) {
+      cat("\ntarget=",target, "\n")
+
+      scenario <- rg.test.int.versus.nonint.flow(N=N,L=NULL,target=target,e=e)
+      if( ! is.null(dirname) ) {
+        save(scenario,file=paste(dirname,"/",run,".robj",sep=""))
+        cat("writing",paste(dirname,"/",run,".robj",sep=""),"\n")
+      }
+      vecTarget <- c(vecTarget,target)
+      vecSPgamma <- c(vecSPgamma,scenario$sp.results$gamma)
+      vecFLOWgamma <- c(vecFLOWgamma,scenario$flow.results$gamma)
+      vecINTgamma <- c(vecINTgamma,scenario$int.results$bestgamma)
+      vecFLOWtime <- c(vecFLOWtime,scenario$flow.results$runtime)
+      vecMAXmpls <- c(vecMAXmpls,scenario$flow.results$max.mpls)
+      vecMAXbf <- c(vecMAXbf,scenario$flow.results$max.bf)
+      run <- run +1
+    }
+    
+  }
+  cat("\n")
+  results <- data.frame(target=vecTarget,
+                        SPgamma=vecSPgamma,
+                        INTgamma=vecINTgamma,
+                        FLOWgamma=vecFLOWgamma,
+                        FLOWtime=vecFLOWtime,
+                        MAXmpls=vecMAXmpls,
+                        MAXbf=vecMAXbf
+                        )
+  
+  return(results)
+}
+
+
+rg.run.tests.process <- function(dirname) {
+  vecN <- c()
+  vecL <- c()
+  vecSPgamma <- c()
+  vecSPmaxflow <- c()
+  vecFLOWgamma <- c()
+  vecFLOWmaxflow <- c()
+  vecINTgamma <- c()
+  vecINTmaxflow <- c()
+  vecFLOWtime <- c()
+  vecMAXmpls <- c()
+  vecMAXbf <- c()
+  vecRatio <- c()
+  run <- 1
+  file <- paste(dirname,"/",run,".robj",sep="")
+  while(file.exists(file)) {
+    load(file)
+    N <- length(nodes(scenario$g))
+    vecN <- c(vecN,N)
+    vecSPgamma <- c(vecSPgamma,scenario$sp.results$gamma)
+    vecSPmaxflow <- c(vecSPmaxflow,
+                      rg.calc.max.flow(scenario$sp.results$demands,scenario$sp.results$gamma))
+    vecFLOWgamma <- c(vecFLOWgamma,scenario$flow.results$gamma)
+    vecFLOWmaxflow <- c(vecFLOWmaxflow,
+                        rg.calc.max.flow(scenario$flow.results$demands,scenario$flow.results$gamma))
+#    vecFLOWmaxflow <- c(vecFLOWmaxflow,
+#                        rg.calc.max.flow(scenario$flow.results$demands,0))
+    vecINTgamma <- c(vecINTgamma,scenario$int.results$bestgamma)
+    vecINTmaxflow <- c(vecINTmaxflow,
+                       rg.calc.max.flow(scenario$int.results$intdemands,
+                                        scenario$int.results$bestgamma))
+#    vecINTmaxflow <- c(vecINTmaxflow,rg.calc.max.flow(scenario$int.results$intdemands,0))
+    vecFLOWtime <- c(vecFLOWtime,scenario$flow.results$runtime)
+    vecMAXmpls <- c(vecMAXmpls,scenario$flow.results$max.mpls)
+    vecMAXbf <- c(vecMAXbf,scenario$flow.results$max.bf)
+    vecRatio <- c(vecRatio,scenario$flow.results$ratio)
+    run <- run+1
+    file <- paste(dirname,"/",run,".robj",sep="")
+  }
+  print(length(vecSPmaxflow))
+  print(length(vecFLOWmaxflow))
+  print(length(vecINTmaxflow))
+  results <- data.frame(N=vecN,
+                        SPgamma=vecSPgamma,
+                        SPmaxflow=vecSPmaxflow,
+                        INTgamma=vecINTgamma,
+                        INTmaxflow=vecINTmaxflow,
+                        FLOWgamma=vecFLOWgamma,
+                        FLOWmaxflow=vecFLOWmaxflow,
+                        FLOWtime=vecFLOWtime,
+                        MAXmpls=vecMAXmpls,
+                        MAXbf=vecMAXbf,
+                        Ratio=vecRatio
+                        )
+}
+
+rg.calc.max.flow <- function(demands,gamma) {
+  flow <- 0.0
+  for(i in demands) {
+    flow <- flow + i$flow / (1 - gamma)
+  }
+  return(flow)
+}
+
+rg.run.tests.process.maxflow <- function(dirname) {
+  vecN <- c()
+  vecL <- c()
+  vecSPgamma <- c()
+  vecFLOWgamma <- c()
+  vecINTgamma <- c()
+  vecFLOWtime <- c()
+  vecMAXmpls <- c()
+  vecMAXbf <- c()
+  vecRatio <- c()
+  run <- 1
+  file <- paste(dirname,"/",run,".robj",sep="")
+  while(file.exists(file)) {
+    load(file)
+    N <- length(nodes(scenario$g))
+    vecN <- c(vecN,N)
+    vecSPgamma <- c(vecSPgamma,scenario$sp.results$gamma)
+    vecFLOWgamma <- c(vecFLOWgamma,scenario$flow.results$gamma)
+    vecINTgamma <- c(vecINTgamma,scenario$int.results$bestgamma)
+    vecFLOWtime <- c(vecFLOWtime,scenario$flow.results$runtime)
+    vecMAXmpls <- c(vecMAXmpls,scenario$flow.results$max.mpls)
+    vecMAXbf <- c(vecMAXbf,scenario$flow.results$max.bf)
+    vecRatio <- c(vecRatio,scenario$flow.results$ratio)
+    run <- run+1
+    file <- paste(dirname,"/",run,".robj",sep="")
+  }
+  results <- data.frame(N=vecN,
+                        SPgamma=vecSPgamma,
+                        INTgamma=vecINTgamma,
+                        FLOWgamma=vecFLOWgamma,
+                        FLOWtime=vecFLOWtime,
+                        MAXmpls=vecMAXmpls,
+                        MAXbf=vecMAXbf,
+                        Ratio=vecRatio
+                        )
+}
+
+
+
+## test for PURSUIT TM theory
+##
+rg.test.int.versus.nonint.flow <- function(N=8,L=NULL,target=0.0,e=0.1,g=NULL) {
+  if(is.null(g)) {
+    g <- rg.generate.random.graph(N,2,25)
+    
+  } else {
+    N <- length(nodes(g))
+  }
+  M <- length(edgeMatrix(g))/2
+  if(is.null(L)) {
+    ## generate using lognormal traffic as in
+    ## Nucci, Antonio and Sridharan, Ashwin and Taft, Nina},
+    ## The problem of synthetically generating IP traffic matrices: initial recommendations},
+    ## SIGCOMM} Comput. Commun. Rev., vol 35(3) July 2005 pp19-32
+    ## this generates a mean of 1 with a variance that matches the paper
+    comm <- rg.gen.demands(g,val=rlnorm(N*N,16,1)/exp(16.5))
+  } else {
+    comm <- rg.gen.demands(g,L,val=rlnorm(L,16,1)/exp(16.5))
+  }
+
+  ## set some random capacities
+  g <- rg.set.capacity(g,runif(M,5,10))
+  g <- rg.set.weight(g,0.0)
+  ##results <- rg.sp.max.concurrent.flow(g,comm)
+  results <- rg.minimum.congestion.flow(g,comm,e=e,progress=TRUE)
+  ## need to customize this
+  multiplier <- (1-target)/(1-results$gamma)
+  comm <- rg.rescale.demands(comm,multiplier)
+  sp.results <- rg.sp.max.concurrent.flow(g,comm)
+  runtime <- as.double(system.time(flow.results <- rg.minimum.congestion.flow(g,comm,e=e,progress=TRUE))[1])
+  flow.results$runtime <- runtime
+  gcount <- rg.count.edge.flows(g,flow.results$demands)
+  flow.results$max.mpls <- max(as.double(edgeData(gcount,att="weight")))
+  flow.results$max.bf <- max(as.double(lapply(edges(g),length)))
+  
+  int.results <- rg.max.concurrent.flow.int.c(g,flow.results$demands,e=e,progress=TRUE)
+
+  output <- list()
+  output$g <- g
+  output$sp.results <- sp.results
+  output$flow.results <- flow.results
+  output$int.results <- int.results
+  output$comm <- comm
+  cat("sp=",sp.results$gamma,",flow=",flow.results$gamma,"int=",int.results$bestgamma,"\n")
+  return(output)
+}
+
+rg.gen.all.pairs.demands <- function(g,val=1.0) {
+  nodes <- nodes(g)
+  comm <- list()
+  n=1;
+
+  k <- 1
+  vallen <- length(val)
+  for(i in nodes) {
+    for(j in nodes) {
+      if ( i != j ) {
+        comm[[as.character(n)]] <- list(source=i,sink=j,demand=val[k])
+        k <- k + 1
+        if(k > vallen) k <- 1
+        n <- n+1
+      }
+    }
+  }
+  return(comm)
+    
+}
+
+
+## Generate a random graph and augmented graph representing the
+## wavelength switched paths through the network.
+## n - number of nodes
+## mindeg - minimum node degree (default = 3)
+## maxdeg - maximum node degree (default = 7)
+## grid - wavelength numbers to be used on each span (ITU grid 1-73), special
+##        value of zero means the augmented graph is the same as the original
+##        graph
+## lamdacap - the bandwidth of the wavelengths in Gb/s (default 1.0)
+##
+## output - graph$g the original graph
+##          graph$lg the augmented lambda graph
+##          graph$accessnodes the list of access nodes (all of the original graph)
+
+rg.generate.random.lambda.graph <- function(g,n=10,mindeg=3,maxdeg=7,grid=c(0),lambdacap=1.0) {
+
+  #g <- rg.generate.random.graph(n,mindeg,maxdeg)
+
+  nodelist <- c()
+
+  accessnodes <- c()
+  for (n in nodes(g)) {
+    accessnodes <- c(accessnodes,paste("A",n,sep="."))
+  }
+  nodelist <- accessnodes
+  
+  for (n in nodes(g)) {
+    for(l in grid) {
+      nodelist <- c(nodelist,paste("A",n,l,sep="."))
+    }
+  }
+
+  
+  for (e in rg.edgeL(g)) {
+    for(l in grid) {
+      s <- e[1]
+      t <- e[2]
+      nodelist <- c(nodelist,paste(s,t,l,sep="."))
+    }
+  }
+  print(nodelist)
+
+  ag <- new("graphNEL",nodes=nodelist,edgemode="directed")
+
+
+  for(l in grid) {
+    for(n in nodes(g)) {
+      ag <- addEdge(paste("A",n,sep="."),
+                    paste("A",n,l,sep="."),
+                    ag,
+                    c(0))
+      for(u in edges(g)[[n]] ) {
+        if( u == n) next
+        
+        ag <- addEdge(paste("A",n,l,sep="."),
+                      paste(n,u,l,sep="."),
+                      ag,
+                      c(0))
+      }
+    }
+  }
+  for(l in grid) {
+    for (e in rg.edgeL(g)) {
+      s <- e[1]
+      t <- e[2]
+
+      ag <- addEdge(paste(s,t,l,sep="."),
+                    paste("A",t,sep="."),
+                    ag,
+                    c(0))
+      
+      for(u in edges(g)[[t]] ) {
+        if( u == t) next
+        ## s.t to t.access
+        
+        ## s.t to t.u
+
+        ag <- addEdge(paste(s,t,l,sep="."),
+                      paste(t,u,l,sep="."),
+                      ag,
+                      c(0))
+      }
+    }
+  }
+
+  ag <- rg.set.capacity(ag,lambdacap)
+  graph <- list()
+  graph$g <- g
+  graph$ag <- ag
+  graph$anodes <- accessnodes
+  return(graph)
+}
+
+rg.sp.lambda.max.concurrent.flow <- function(g,demands) {
+
+
+  for(c in names(demands)) {
+    demands[[c]]$flow <- 0
+  }
+
+  nodes <- nodes(g)
+  gsol <- g
+  punults.done <- rep(FALSE,length(nodes))
+
+  rg.set.all.graph.edge.weights(gsol)
+  
+  results <- list()
+  results$g <- g
+  results$demands <- demands
+
+  ccount <- 1
+  for (i in demands) {
+    startind=which(nodes==i$source)
+    finind=which(nodes==i$sink)
+    if(!punults.done[startind]) {
+      g.sp[[startind]] <- dijkstra.sp(g,start=i$source)$penult
+      punults.done[startind]=TRUE
+    }
+    path <- extractPath(startind,finind,g.sp[[startind]])
+    print(path)
+    gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+    demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
+    ccount <- ccount + 1
+  }
+  f <- as.double(edgeData(gsol,attr="weight"))
+  c <- as.double(edgeData(gsol,attr="capacity"))
+  lambda <- min(c/f)
+
+  gamma <- min((c-f)/c)
+    
+  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
+    
+  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
+  
+  results$demands <- demands
+  results$gflow <- gsol
+  results$lambda <- lambda
+  results$gamma <- gamma
+    
+  return(results)
+}
+
 rg.dfs <- function(g) {
   data <- list()
   data$color <- rep(0,length(nodes(g))+1)
@@ -172,7 +632,7 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
 ###              "lowest" done in lowest cost (lowest dual path) order
 ###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="fixed") {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="fixed",deltaf=1.0) {
 
   ## note this is not the dual value
   calcD <- function() {
@@ -197,7 +657,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
   vlength <- rep(0.0,length(vcapacity))
   vdemandflow <- rep(0.0,length(vcapacity))
   L <- length(vlength)
-  delta <- (L / (1-e)) ^ (-1/e)
+  delta <- deltaf * (L / (1-e)) ^ (-1/e)
   vlength <- delta / vcapacity
   edgeMap <- adjMatrix(g)
 
@@ -286,7 +746,8 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
                    pb,
                    bestgamma,
                    environment(),
-                   permutation
+                   permutation,
+                   deltaf
                    );
   
   if( progress != FALSE) {
@@ -349,16 +810,34 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
     }
   }
 
+  intdemands <- list()
+  bestpaths=retlist$bestpaths+1
+
+  for(i in names(demands)) {
+    intdemands[[i]]$source <- demands[[i]]$source
+    intdemands[[i]]$sink <- demands[[i]]$sink
+    intdemands[[i]]$demand <- demands[[i]]$demand
+    intdemands[[i]]$flow <- demands[[i]]$demand
+    intdemands[[i]]$paths <- list()
+    intdemands[[i]]$paths[[names(demands[[i]]$paths[bestpaths[as.integer(i)]])]] <-
+      demands[[i]]$demand
+
+  }
+
+  gflowint <- rg.max.concurrent.flow.graph(gdual,intdemands)
+  
   retval <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,betar=betar,
                  lambda=lambda,phases=retlist$totalphases,e=e,vlength=retlist$vlengths,
                  countgamma=retlist$countgamma,
                  bestgamma=retlist$bestgamma,
-                 bestpaths=retlist$bestpaths+1,
+                 bestpaths=bestpaths,
                  pathdiffcount=retlist$pathdiffcount,
                  phasepathdiffcount=retlist$phasepathdiffcount,
                  gammavals=retlist$gammavals,
                  betavals=retlist$betavals,
-                 lambdavals=retlist$lambdavals)
+                 lambdavals=retlist$lambdavals,
+                 intdemands=intdemands,
+                 gflowint <- gflowint)
 
   
   return(retval)
@@ -425,16 +904,17 @@ rg.test.idea <- function(maxtime=1.0,N=9,L=10,filebase=NULL) {
 ###         output$results - from running rg.minimum.congestion.flow()
 ###         output$commr - the commodities (scaled to give gamma a reasonable value)
 ###         output$comm - the original commodities
-rg.gen.random.scenario <- function(N=6,L=8,target=0.9) {
-  g <- rg.generate.random.graph(N,3,4)
+rg.gen.random.scenario <- function(N=6,L=8,target=0.9,progress=FALSE,e=0.02) {
+  g <- rg.generate.random.graph(N,3,6)
   M <- length(edgeMatrix(g))/2
   comm <- rg.gen.demands(g,L,runif(L,1,5))
   g <- rg.set.capacity(g,runif(M,5,10))
   g <- rg.set.weight(g,0.0)
-  results <- rg.minimum.congestion.flow(g,comm,e=0.02)
+  results <- rg.minimum.congestion.flow(g,comm,e=e,progress=progress)
   ## need to customize this
-  commr <- rg.rescale.demands(comm,(1+results$gamma)*target)
-  results <- rg.minimum.congestion.flow(g,commr,e=0.02)
+  multiplier <- (1-target)/(1-results$gamma)
+  commr <- rg.rescale.demands(comm,multiplier)
+  results <- rg.minimum.congestion.flow(g,commr,e=e,progress=progress)
   runtotal <- 1
   for(i in results$demands) {
     val <- length(names(i$paths))
@@ -1426,4 +1906,163 @@ rg.run.alice <- function() {
     rg.run.sp(s)
   }
 
+}
+
+rg.max.int.flow <- function(g,demands,e=0.1,progress=FALSE,
+                            permutation="fixed",deltaf=1.0) {
+  savedemands <- demands
+  ## first obtain a reasonable feasible flow using
+  ## a poor shortest path flow
+  estimate <- rg.sp.max.concurrent.flow(g,demands)
+  ## we know that estimate$lambda < Beta
+  ## so scale demands by this much to make sure now
+  ## that beta > 1
+  estlambdascale <- estimate$lambda
+  demands <- rg.rescale.demands(demands,estimate$lambda)
+
+  ## Beta might be very high so obtain 2-approximate solution
+  ## (1+w) = 2 = (1-e)^-3
+  e2= 1- 2^(-1/3)
+
+  if(progress != FALSE)
+    progress <- "Calculating 2 opt"
+  
+  res.2opt <- rg.fleischer.max.concurrent.flow.c(g,demands,e=e2,
+                                                 updateflow=FALSE,
+                                                 progress=progress,permutation,
+                                                 deltaf)
+  
+  ## now have 2-opt solution as beta_est so  beta < beta_est < 2*beta
+  ## scaling by beta_est/2 give best demand for reduced running time
+  scalef <- res.2opt$beta /2
+  opt2scale <- scalef
+  
+  demands <- rg.rescale.demands(demands,scalef)
+
+
+  if(progress != FALSE)
+    progress <- "Main calculation"
+
+  res <- rg.fleischer.max.concurrent.flow.with.int.c(g,demands,e=e,
+                                                     progress=progress,updateflow=FALSE,
+                                                     permutation,
+                                                     deltaf)
+  
+  for(n in names(demands)) {
+    res$demands[[n]]$demand <- savedemands[[n]]$demand
+  }
+  
+  res$lambda <- calcLambda(res$demands)
+    
+  res$beta <- calcBeta(res$demands,res$gdual)
+    
+  res$estlambdascale <- estlambdascale
+  res$opt2scale <- opt2scale
+  res
+}
+
+
+rg.fleischer.max.concurrent.flow.with.int.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="lowest",deltaf=1.0) {
+
+
+  em <- edgeMatrix(g)
+  nN <- nodes(g)
+  nv <- length(nN)
+  
+  ne <- ncol(em)
+  eW <- unlist(edgeWeights(g))
+
+  cap <- as.double(edgeData(g,attr="capacity"))
+
+  demands.sources <- as.integer(lapply(demands,"[[","source"))
+  demands.sinks <- as.integer(lapply(demands,"[[","sink"))
+  demands.demand <- lapply(demands,"[[","demand")
+
+  doubreq <- 2/e * log(ne/(1-e),base=(1+e))
+
+  if(progress != FALSE) {
+    pb <- txtProgressBar(title = "progress bar", min = 0,
+                        max = doubreq, style=3)
+  } else {
+    pb <- NULL
+  }
+  if(is.numeric(permutation))
+    permutation <- permutation - 1
+  else if(permutation == "fixed")
+    permutation <- 0: (length(demands) -1)
+  else if(permutation == "random")
+    permutation <- -1
+  else if(permutation == "lowest")
+    permutation <- -2
+  
+  #permutation <- seq(0,length(demands)-1)
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_with_int_c",
+                   as.integer(nv),
+                   as.integer(ne),
+                   as.integer(em-1),
+                   as.double(eW),
+                   as.double(cap),
+                   as.integer(length(demands)),
+                   as.integer(demands.sources -1 ),
+                   as.integer(demands.sinks -1),
+                   as.double(demands.demand),
+                   as.double(e),
+                   as.logical(updateflow),
+                   pb,
+                   environment(),
+                   progress,
+                   permutation,
+                   deltaf
+                 )
+  
+  
+  demflow <- retlist[[2]]
+  for(c in names(demands)) {
+    demands[[c]]$flow <- demflow[[as.integer(c)]]
+    demands[[c]]$paths <- list()
+  }
+
+
+  if(retlist[[3]][[1]] > 0) {
+    retdemkey <- retlist[[4]]
+    retdemval <- retlist[[5]]
+    i <- 1
+    for(n in seq(1:retlist[[3]][[1]])) {
+      demand <- retdemkey[[i]]
+      i <- i+1
+      path <- retdemkey[[i]]
+      i <- i+1
+      demands[[demand]]$paths[[path]] <- retdemval[[n]]
+    }
+  }
+  delta <- deltaf * (ne / (1-e)) ^ (-1/e) 
+
+  scalef <- 1 / log(1/delta,base=(1+e))
+
+  
+  gdual <- g
+
+  fromlist <- edgeMatrix(g)[1,]
+  tolist <- edgeMatrix(g)[2,]
+
+  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist[[1]]
+
+  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+
+  beta <- calcBeta(demands,gdual)
+  
+  lambda=NULL
+  if(updateflow) {
+    lambda <- calcLambda(demands)
+    foundratio <- beta / lambda
+    ratiobound <- (1-e)^-3
+  }
+
+  if( progress != FALSE) {
+    close(pb)
+  }
+
+  retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
+                   phases=retlist[[3]][[2]],e=e)
 }

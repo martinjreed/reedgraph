@@ -150,12 +150,36 @@ rg.remove.edges <- function(g,path) {
   return(g)
 }
 
+### Simple way to set demands
+### val the value to assign to ALL demands
+### array of node pairs, as characters
+rg.set.demand <- function(val=1.0,nodes) {
+  if(length(nodes) %% 2 != 0) {
+    cat("Error in rg.set.demands nodes must be even\n")
+    return(NULL)
+  }
+  j <- 1
+  count <- 1
+  demand <- list()
+  for(i in seq(1,length(nodes),2)) {
+    j <- i+1
+    cat("i=",i,"j=",j,"\n")
+    demand[[as.character(count)]]$source <- as.character(nodes[i])
+    demand[[as.character(count)]]$sink <- as.character(nodes[j])
+    demand[[as.character(count)]]$demand <- val
+  }
+
+  return(demand)
+
+}
+
 ### generate demands
 
 ### num: number of demands to generate, it will be this many across a
 ###      uniformly random selection of node pairs (i,j) where i != j
 ###      If NULL then it will be between every pair
-
+### nodes: list of nodes to generate demands between. If NULL it will
+###      be every node in the graph
 ### val: value of demand. Accepts a vector and iterates through in
 ###      order and will continue back to beggining if necessary
 ###      use runif(num,min,max) if uniform random required
@@ -163,40 +187,42 @@ rg.remove.edges <- function(g,path) {
 ### each demand is identified by a number in the order of the demand
 ### therefore probably not best as mutuable unless care is taken
 ### that number and indexing is used correctly
-rg.gen.demands <- function(g,num=NULL,val=1.0) {
+rg.gen.demands <- function(g,num=NULL,val=1.0,nodes=NULL) {
+  if( is.null(nodes) ) nodes <- nodes(g)
   comm <- list()
   n=1;
-  j <- 1
+  k <- 1
   vallen <- length(val)
   if( is.null(num) ) { # all pairs uniform demands
-    for(i in nodes(g)) {
-      for(j in nodes(g)) {
+    for(i in nodes) {
+      ##cat("doing",i,"\n")
+      for(j in nodes) {
         if ( i != j ) {
-          comm[[as.character(n)]] <- list(source=i,sink=j,demand=val[j])
-          j <- j + 1
-          if(j > vallen) j <- 1
+          comm[[as.character(n)]] <- list(source=i,sink=j,demand=val[k])
+          k <- k + 1
+          if(k > vallen) k <- 1
           n <- n+1
         }
       }
     }
   } else { # random selection of nodes
-    numnodes <- length(nodes(g))
+    numnodes <- length(nodes)
     for(i in seq(1:num)) {
       fromto <- floor(runif(2,min=1,max=numnodes+1))
       while(fromto[1] == fromto[2])
         fromto <- floor(runif(2,min=1,max=numnodes+1))
       comm[[as.character(n)]] <- list(
-                                       source=
-                                       as.character(fromto[1]),
-                                       sink=
-                                       as.character(fromto[2])
-                                       ,demand=val[j])
-      j <- j + 1
-      if(j > vallen) j <- 1
+                                      source=
+                                      nodes[fromto[1]],
+                                      sink=
+                                      nodes[fromto[2]]
+                                      ,demand=val[k])
+      k <- k + 1
+      if(k > vallen) k <- 1
       n <- n+1
+    }
   }
-}
-comm
+  comm
 }
 
 ### Sets all demands to a constant value
@@ -216,9 +242,10 @@ rg.set.capacity <- function(g,val) {
   if (match("capacity",names(edgeDataDefaults(g)),nomatch=1)) {
     edgeDataDefaults(g,"capacity") <- 1.0
   }
+  nodes <- nodes(g)
   edgeData(g,
-           from=as.character(em[1,]),
-           to=as.character(em[2,]),
+           from=nodes[em[1,]],
+           to=nodes[em[2,]],
            attr="capacity") <- val
   g
 }
@@ -253,15 +280,16 @@ rg.relabel <- function(myg) {
 ### this is very inefficient if called repeatedly, better to copy
 ### and paste "Inline" if done many times
 rg.addto.weight.on.path <- function(g,path,val,attr="weight") {
+  nodes <- nodes(g)
     if(length(path) == 1) {
-      edgeData(g,as.character(path[1]),as.character(path[2]),attr) <-
-      edgeData(g,as.character(path[1]),as.character(path[2]),attr) +val
+      edgeData(g,nodes[path[1]],nodes[path[2]],attr) <-
+      edgeData(g,nodes[path[1]],nodes[path[2]],attr) +val
   } else {
     
     fromlist <- path[1:{length(path)-1}]
     tolist <- path[2:{length(path)}]
-    newvals <- as.double(edgeData(g,as.character(fromlist),as.character(tolist),attr)) + val
-    edgeData(g,as.character(fromlist),as.character(tolist),attr) <- newvals
+    newvals <- as.double(edgeData(g,nodes[fromlist],nodes[tolist],attr)) + val
+    edgeData(g,nodes[fromlist],nodes[tolist],attr) <- newvals
   }
   return(g)
 }
@@ -309,10 +337,11 @@ rg.sp.max.concurrent.flow <- function(g,demands) {
     ## calculate dijkstra.sp if we do not have one for this vertex
     if(is.null(g.sp[[i$source]]))
       g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
-      path <- extractPath(i$source,i$sink,g.sp[[i$source]])
-      gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
-      demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
-      ccount <- ccount + 1
+    path <- extractPath(i$source,i$sink,g.sp[[i$source]])
+    gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+    demands[[ccount]] <- updateExplicitFlow(g.sp[[i$source]],i$demand,i)
+    demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
+    ccount <- ccount + 1
   }
   
   f <- as.double(edgeData(gsol,attr="weight"))
@@ -439,7 +468,7 @@ calcLambda <- function(demands) {
 ### e: approximation value for a w-opt solution
 ###    where (1+w) = (1-e)^2 (default e=0.1)
 ### progress: display graphical progress bar (default false)
-rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation="fixed") {
+rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation="fixed",deltaf=1.0) {
 
   savedemands <- demands
   ## first obtain a reasonable feasible flow using
@@ -460,7 +489,9 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
   
   if (ccode) {
     res.2opt <- rg.fleischer.max.concurrent.flow.c(g,demands,e=e2,
-                                                   updateflow=FALSE,progress=progress,permutation)
+                                                   updateflow=FALSE,
+                                                   progress=progress,permutation,
+                                                   deltaf)
   }  else {
     res.2opt <- rg.fleischer.max.concurrent.flow(g,demands,e=e2,
                                                  updateflow=FALSE,progress=progress)
@@ -479,7 +510,9 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 
   if (ccode) {
     res <- rg.fleischer.max.concurrent.flow.c(g,demands,e=e,
-                                              progress=progress,updateflow=updateflow,permutation)
+                                              progress=progress,updateflow=updateflow,
+                                              permutation,
+                                              deltaf)
   } else {
     res <- rg.fleischer.max.concurrent.flow(g,demands,e=e,
                                             progress=progress,updateflow=updateflow)
@@ -525,7 +558,7 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 ###              demands: each with met demand and paths
 
 
-rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="lowest") {
+rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="lowest",deltaf=1.0) {
 
 
   em <- edgeMatrix(g)
@@ -559,7 +592,7 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
     permutation <- -2
   
   #permutation <- seq(0,length(demands)-1)
-  retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
                    as.integer(nv),
                    as.integer(ne),
                    as.integer(em-1),
@@ -574,7 +607,8 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
                    pb,
                    environment(),
                    progress,
-                   permutation
+                   permutation,
+                   deltaf
                  )
   
   
@@ -597,7 +631,7 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
       demands[[demand]]$paths[[path]] <- retdemval[[n]]
     }
   }
-  delta <- (ne / (1-e)) ^ (-1/e)
+  delta <- deltaf * (ne / (1-e)) ^ (-1/e) 
 
   scalef <- 1 / log(1/delta,base=(1+e))
 
@@ -619,14 +653,21 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
     lambda <- calcLambda(demands)
     foundratio <- beta / lambda
     ratiobound <- (1-e)^-3
+  } else {
+    foundratio <- NULL
+    ratiobound <- NULL
   }
+  
 
   if( progress != FALSE) {
     close(pb)
   }
 
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
-                   phases=retlist[[3]][[2]],e=e)
+                   phases=retlist[[3]][[2]],e=e,
+                   ratio=foundratio,
+                   bound=ratiobound
+                   )
 }
 
 ### Utility function used by rg.fleischer.max.concurrent.flow()
@@ -1172,10 +1213,10 @@ rg.rescale.demands <- function(demands,scalef) {
 rg.set.all.graph.edge.weights <- function(g,val=0.0)  {
   fromedges <- edgeMatrix(g)[1,]
   toedges <- edgeMatrix(g)[2,]
-
+  nodes=nodes(g)
   edgeData(g,
-           as.character(fromedges),
-           as.character(toedges),
+           nodes[fromedges],
+           nodes[toedges],
            "weight") <- val
   g
 }
@@ -1196,6 +1237,7 @@ rg.max.concurrent.flow.graph <- function(g,demands) {
       pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
       fromlist <- pv[1:length(pv)-1]
       tolist <- pv[2:length(pv)]
+      
       weights <- as.double(edgeData(g,from=fromlist,to=tolist,att="weight"))
       weights <- weights + d$paths[[p]]
       edgeData(g,from=fromlist,to=tolist,att="weight") <- weights
@@ -1229,9 +1271,9 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 
-rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random") {
+rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0) {
 
-  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE,permutation=permutation)
+  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE,permutation=permutation,deltaf=1.0)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
   
   res$gflow <- rg.max.concurrent.flow.graph(res$gflow,res$demands)
@@ -1241,14 +1283,52 @@ rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutatio
   res
 }
 
+### Truncated quantile function for an arbitrary distribution
+### spec = distribution name
+### a = negative truncation (must be greater than this)
+### b = positive truncation (must be less/= to this)
+### .... arbitrary arguments to send to the distribution
+qtrunc <- function(p, spec, a = -Inf, b = Inf, ...)
+{
+    tt <- p
+    G <- get(paste("p", spec, sep = ""), mode = "function")
+    Gin <- get(paste("q", spec, sep = ""), mode = "function")
+    tt <- Gin(G(a, ...) + p*(G(b, ...) - G(a, ...)), ...)
+    return(tt)
+}
+
+### Random number generator using a random distribution which
+### is optionally truncated
+### spec = name of distribution
+### a = lower truncation
+### b = upper truncation
+### ... arguments to be sent to probability distibution
+rtrunc <- function(n, spec, a = -Inf, b = Inf, ...)
+{
+    x <- u <- runif(n, min = 0, max = 1)
+    x <- qtrunc(u, spec, a = a, b = b,...)
+    return(x)
+}
+
 ### Generate a random graph with a range of node degree
 ### uses igraph routines
 ### n - number of nodes
 ### mindeg - minimum node degree default = 3
 ### maxdeg - maximum node degree default = 7
+### dist - the name of the distrubution for the outdegree
+### dist1 - the first parameter used by dist
+### dist2 - the second parameter used by dist
 ### return GraphNEL
-rg.generate.random.graph <- function(n=10,mindeg=3,maxdeg=7) {
-  degrees <- floor(runif(n,mindeg,maxdeg+1))
+rg.generate.random.graph <- function(n=10,mindeg=2,maxdeg=20,
+                                     dist="weibull",
+                                     dist1=0.42,dist2=1,retry=10) {
+  if(n< maxdeg -1) {
+    maxdeg=n-2
+  }
+  ## note this needs a bit more work - not quite right
+  ## as the truncation gives an error - but good enough
+  ## for generating some "random" graphs
+  degrees <- floor(rtrunc(n,dist,a=mindeg,b=maxdeg,dist1,dist2))
 
   ## note sum(degrees) has to be even, add one to smallest
   ## node degree of first node found.
@@ -1258,7 +1338,25 @@ rg.generate.random.graph <- function(n=10,mindeg=3,maxdeg=7) {
     degrees[pos] <- degrees[pos] +1
   }
 
-  gi <- degree.sequence.game(degrees,method="vl")
+  gi <- NULL
+  tryCatch(gi <- degree.sequence.game(degrees,method="vl"),
+           error=function(e) { print("trying graph generation again") })
+  if(is.null(gi)) {
+    for(i in 1:10) {
+      degrees <- floor(rtrunc(n,dist,a=mindeg,b=maxdeg,dist1,dist2))
+      
+      ## note sum(degrees) has to be even, add one to smallest
+      ## node degree of first node found.
+      if(sum(degrees) %% 2 != 0) {
+        minval <- min(degrees)
+        pos <- match(minval,degrees)
+        degrees[pos] <- degrees[pos] +1
+      }
+      tryCatch(gi <- degree.sequence.game(degrees,method="vl"),
+               error=function(e) { print("trying graph generation again") })
+      if(!is.null(gi)) break
+    }
+  }
   gi <- as.directed(gi)
   G <- rg.relabel(igraph.to.graphNEL(gi))
   G

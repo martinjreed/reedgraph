@@ -1,9 +1,9 @@
-#CPPFLAGS = -g
-CPPFLAGS = -O2
+CPPFLAGS = -g
+#CPPFLAGS = -O2
 all: rgalgorithms.so rgalgorithms.o
 
 clean:
-	rm -f rgalgorithms.so rgalgorithms.o *.gch
+	rm -f rgalgorithms.so rgalgorithms.o rgalgorithms_scratch.o *.gch
 
 rgalgorithms.so: rgalgorithms.o rgalgorithms_scratch.o
 	R CMD SHLIB rgalgorithms.o rgalgorithms_scratch.o
@@ -18,7 +18,7 @@ rgalgorithms.h.gch: rgalgorithms.h
 
 
 rgalgorithms.o: rgalgorithms.cpp rgalgorithms.h rgalgorithms.h.gch
-	 ccache i686-pc-linux-gnu-g++ -I/usr/lib/R/include  -I/usr/local/include -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.cpp -o rgalgorithms.o
+	 ccache i686-pc-linux-gnu-g++ -I/usr/lib/R/include  -I/usr/local/include -I/usr/local/include/igraph -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.cpp -o rgalgorithms.o
 
 
 rgalgorithms_scratch.o: rgalgorithms_scratch.cpp rgalgorithms.h rgalgorithms.h.gch

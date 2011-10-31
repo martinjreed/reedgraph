@@ -90,4 +90,39 @@ inline std::string to_string (const T& t)
 
 inline std::string to_string(const int& t);
 
+typedef boost::graph_traits < Graph_dd >::edge_descriptor Edge;
+typedef boost::graph_traits < Graph_dd >::vertex_descriptor Vertex;
+
+typedef boost::graph_traits < Graph_rg >::edge_descriptor rgEdge;
+typedef boost::graph_traits < Graph_rg >::vertex_descriptor rgVertex;
+
+  // these two probably obsolete, but keep for future sort of vector<pair>
+struct less_cost {
+public:
+  bool operator()(const std::pair<int, double> a,
+				  const std::pair<int, double> b) {
+	return (a.second < b.second);
+  }
+};
+struct great_cost {
+public:
+  bool operator()(const std::pair<int, double> a,
+				  const std::pair<int, double> b) {
+	return (a.second > b.second);
+  }
+};
+
+class rg_demand {
+ public:
+  double flow;
+  rgVertex source;
+  rgVertex sink;
+  double demand;
+  std::map<const std::vector<rgVertex>,double> path_flow_map;
+};
+
+int updateExplicitFlow(rg_demand& demand,
+					   std::vector<rgVertex>& penult,
+					   double flow);
+double calcD(Graph_rg& gdual);
 

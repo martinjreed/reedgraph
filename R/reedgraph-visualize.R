@@ -79,6 +79,14 @@ setMethod("plot",
 
 
 
+rg.plot.gammas <- function(g,layout) {
+  flows <- as.double(edgeData(g,attr="weight"))
+  caps <- as.double(edgeData(g,attr="capacity"))
+  gammas <- (caps-flows)/caps
+  plot.graphNEL(g,layout=layout,edgeweights=gammas)
+
+}
+
 ### Plot directed igraph using tcltk
 ### args (with defaults if not given)
 ### graph (an igraph object)

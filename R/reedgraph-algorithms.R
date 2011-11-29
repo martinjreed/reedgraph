@@ -26,6 +26,13 @@ rg.edgeVector <- function(g,attr="weight") {
   return(as.double(edgeData(g,attr=attr)))
 }
 
+rg.edgeVectorGamma <- function(g) {
+  c <- as.double(edgeData(g,attr="capacity"))
+  f <- as.double(edgeData(g,attr="weight"))
+  gamma <- (c-f)/c
+  return(gamma)
+}
+
 rg.demandsVector <- function(demands,attr="demand") {
   return(as.double(lapply(res$demands,"[[",attr)))
 }
@@ -163,10 +170,10 @@ rg.set.demand <- function(val=1.0,nodes) {
   demand <- list()
   for(i in seq(1,length(nodes),2)) {
     j <- i+1
-    cat("i=",i,"j=",j,"\n")
     demand[[as.character(count)]]$source <- as.character(nodes[i])
     demand[[as.character(count)]]$sink <- as.character(nodes[j])
     demand[[as.character(count)]]$demand <- val
+    count <- count + 1
   }
 
   return(demand)
@@ -258,8 +265,8 @@ rg.set.weight <- function(g,val) {
     edgeDataDefaults(g,"weight") <- 1.0
   }
   edgeData(g,
-           from=as.character(em[1,]),
-           to=as.character(em[2,]),
+           from=nodes(g)[em[1,]],
+           to=nodes(g)[em[2,]],
            attr="weight") <- val
   g
 }
@@ -339,7 +346,7 @@ rg.sp.max.concurrent.flow <- function(g,demands) {
       g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
     path <- extractPath(i$source,i$sink,g.sp[[i$source]])
     gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
-    demands[[ccount]] <- updateExplicitFlow(g.sp[[i$source]],i$demand,i)
+    demands[[ccount]] <- updateExplicitFlow(g,g.sp[[i$source]],i$demand,i)
     demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
     ccount <- ccount + 1
   }
@@ -592,7 +599,9 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
     permutation <- -2
   
   #permutation <- seq(0,length(demands)-1)
-  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
+
+  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
                    as.integer(nv),
                    as.integer(ne),
                    as.integer(em-1),
@@ -674,20 +683,20 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
 ### penult - vetor from Dijkstra.Sp
 ### mincap - mincapacity to set flow to this value
 ### demand - the specific demand to update
-updateExplicitFlow <- function(penult,mincap,demand) {
+updateExplicitFlow <- function(g,penult,mincap,demand) {
   
   s <- demand$source
   t <- demand$sink
   p <- t
   t <- penult[[t]]
-  tag <- paste(t,"|",p,sep="")
+  tag <- paste(nodes(g)[t],"|",p,sep="")
   
   path <- tag
   
   while(s !=t ) {
     p <- t
     t <- penult[[t]]
-    path <- paste(t,"|",path,sep="")
+    path <- paste(nodes(g)[t],"|",path,sep="")
   }
   
   if(is.null(demand$paths[[path]])) {
@@ -751,8 +760,8 @@ rg.fleischer.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE, pr
   toedges <- edgeMatrix(g)[2,]
 
   edgeData(gdual,
-           as.character(fromedges),
-           as.character(toedges),
+           nodes(gdual)[fromedges],
+           nodes(gdual)[toedges],
            "weight") <- delta / capacities
 
   for(c in names(demands)) {
@@ -789,10 +798,11 @@ rg.fleischer.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE, pr
       D <- calcD()
       while( D < 1 && demand > 0 ) {
         sp <- dijkstra.sp(gdual,c$source)
-        p <- extractPath(c$source,c$sink,sp$penult)
+        p <- extractPath(which(nodes(gdual)==c$source),
+                               which(nodes(gdual)==c$sink),sp$penult)
         caponpath <- as.double(edgeData(gdual,
-                                        from=as.character(p[1:length(p)-1]),
-                                        to=as.character(p[2:length(p)]),
+                                        from=nodes(gdual)[p[1:length(p)-1]],
+                                        to=nodes(gdual)[p[2:length(p)]],
                                         attr="capacity"))
 
         mincap <- min(demand,caponpath)
@@ -800,15 +810,16 @@ rg.fleischer.max.concurrent.flow <- function(g,demands,e=0.1,updateflow=TRUE, pr
         demand <- demand - mincap
         
         lengths <- as.double(edgeData(gdual,
-                                      from=as.character(p[1:length(p)-1]),
-                                      to=as.character(p[2:length(p)]),
+                                      from=nodes(gdual)[p[1:length(p)-1]],
+                                      to=nodes(gdual)[p[2:length(p)]],
                                       attr="weight"))
         lengths <- lengths * (1 + (e*mincap) / caponpath)
-        edgeData(gdual,from=as.character(p[1:length(p)-1]),
-                 to=as.character(p[2:length(p)]),
+        edgeData(gdual,
+                 from=nodes(gdual)[p[1:length(p)-1]],
+                 to=nodes(gdual)[p[2:length(p)]],
                  attr="weight") <- lengths
         if(updateflow)
-          c <- updateExplicitFlow(sp$penult,mincap,c)
+          c <- updateExplicitFlow(gdual,sp$penult,mincap,c)
         c$flow <- c$flow + mincap
         D <-  calcD()
       }
@@ -1238,9 +1249,12 @@ rg.max.concurrent.flow.graph <- function(g,demands) {
       fromlist <- pv[1:length(pv)-1]
       tolist <- pv[2:length(pv)]
       
-      weights <- as.double(edgeData(g,from=fromlist,to=tolist,att="weight"))
+      weights <- as.double(edgeData(g,from=fromlist,
+                                    to=tolist,att="weight"))
       weights <- weights + d$paths[[p]]
-      edgeData(g,from=fromlist,to=tolist,att="weight") <- weights
+      edgeData(g,from=fromlist,
+               to=tolist,
+               att="weight") <- weights
 
     }
   }
@@ -1377,6 +1391,18 @@ rg.path.cost <- function(gdual,path) {
   cost <- sum(as.double(edgeData(gdual,from=from,to=to,att="weight")))
   return(cost)
   
+}
+
+### Obtain the edge attribute along the path cin the a graph
+### g - GraphNEL 
+### path - path as "|" separated nodes e.g. "14|7|5"
+### return - attribute vector same length as path
+rg.path.attr <- function(g,path,attr="weight") {
+
+  pv <- as.vector(strsplit(path,"|",fixed=TRUE)[[1]])
+  from <- pv[1:length(pv)-1]
+  to <- pv[2:length(pv)]
+  return(as.double(edgeData(g,from=from,to=to,att=attr)))
 }
 
 ### Attempt to calculate integer min congestion flow

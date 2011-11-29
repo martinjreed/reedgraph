@@ -1,3 +1,315 @@
+#***********************************************************************************
+#***********************************************************************************
+### Compute the multicommodity flow in a graph using naive shortest
+### path g graph of type graphNEL with the edge weight variable used
+### for the shortest path and capacities ignored (ie it may overbook
+### an edge)
+### demands: a list each element is a list [source, sink, demand]
+
+rg.sp.max.concurrent.flow.mays<- function(g,demands) {
+
+
+  for(c in names(demands)) {
+    demands[[c]]$flow <- 0
+  }
+
+  
+  gsol <- g
+  g.sp <- list()
+  gsol.sp <- list()
+  gsol.ds <- list()
+  
+ ## f <- as.double(edgeData(gsol,attr="weight"))
+ ## c <- as.double(edgeData(gsol,attr="capacity"))
+ ##   availability <- 1
+  gsol <- rg.set.all.graph.edge.weights(gsol, 1)
+  
+  ccount <- 1
+  blocked<-c(0)
+  inc<-0
+  load<-c(0)
+
+  for(i in demands) {
+    ## calculate dijkstra.sp if we do not have one for this vertex
+    ##added by Mays
+    cat("from:", i$source,"\n")
+    cat("to:", i$sink, "\n")
+    flg <- 1
+    ##*************
+   ## if(is.null(gsol.sp[[i$source]]))
+    f <- as.double(edgeData(gsol,attr="weight"))
+    c <- as.double(edgeData(gsol,attr="capacity"))
+    availability <- c-f
+
+    cat ("availability:",availability, "\n")
+    w=(1/f)
+    
+    for (j in 1:length(availability)){
+      if (availability[j] < i$demand) {
+	  w[j]=Inf
+      }
+    } 
+     
+    for (k in 1:length(edges(gsol)[[i$source]])){
+      s<-as.character(i$source)
+      if ((as.double(edgeData(gsol,s,att="capacity")[k])-as.double(edgeData(gsol,s,att="weight")[k]))>= as.list(i$demand)){flg <- 0 
+	break}
+    }
+    if (flg == 1){
+      cat ("all links from your source is fully utilized, so demand", ccount, "has been blocked", "\n\n")
+      inc<-inc+1
+      blocked<-append(blocked,inc)
+    }
+# #just testing at the moment not very solid code**********************************************************************************************
+#     cat("your flag value is", flg,"\n")
+#     
+# 	    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
+# 	    path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
+# 	    print("path=")
+# 	    print(path)
+# 	    for (a in 1:(length(path)-1)){
+# 	    cat("your a is:", path[a], "\n")
+# 	    cat(availability[a],"\n")
+# 	    cat(w[a],"\n")
+# 	    if(w[a]==Inf) { for (a in 1:(length(path)-1)){ edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")<-0
+# 	    cat("path weight is:",as.integer(edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")), "\n") }}}
+#      
+# 
+# #********************************************************************************************************************************************    
+#     
+    #cat ("weight:",f, "\n")
+#   print(edgeMatrix(gsol))
+    if(flg==0) {
+#just testing at the moment not very solid code**********************************************************************************************
+    cat("your flag value is", flg,"\n")
+#     
+# 	    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
+# 	    path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
+# 	    print("path=")
+# 	    print(path)
+# 	    for (a in 1:(length(path)-1)){
+# 	      cat("your vertex is:", path[a], "\n")
+# 	      cat(availability[a],"\n")
+# 	      cat(w[a],"\n")
+# 	      if(w[a]==Inf) { 	
+# 		      for (a in 1:(length(path)-1)){ 
+# 			      edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight") <- (1/0)
+# 			      cat("path weight is:",as.double(edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")), "\n") 
+# 		      }
+# 		  for (b in 1:length(edges(gsol)[[i$source]])){
+# 				      if(as.double(edgeData(gsol,as.character(i$source),att="weight")[b] == Inf)) flg <- 1 else {
+# 					  flg<-0
+# 					  break
+# 				      }
+# 		  }
+# 	      break
+# 	      }
+# 	    }
+     
+
+#********************************************************************************************************************************************    
+
+    #cat("edgew is", w, "\n")
+    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
+    print("output from dijkstra.sp")
+    print(gsol.sp[[i$source]])
+    print("dijkstra.sp distance is:")
+    gsol.ds[[i$sink]] <- dijkstra.sp(gsol,start=i$source,w)$distance
+    print(gsol.ds[[i$sink]][[i$sink]])
+    if (gsol.ds[[i$sink]][[i$sink]]!= Inf){
+      path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
+      
+                                        #check that the availability on the path is enough to cover the demand
+      
+      print("path=")
+      print(path)
+      cat ("\n","*********************************************","\n")
+      
+      gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+      demands[[ccount]] <- updateExplicitFlow(gsol,gsol.sp[[i$source]],i$demand,i)
+      demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
+      blocked<-append(blocked,inc)
+    }
+    else
+      {
+        cat("there is no enough available capacity to satisfy this Demand", "\n")
+        inc<-inc+1
+        blocked<-append(blocked,inc)
+      }
+  }
+    
+    ccount <- ccount + 1
+    load<-append(load,ccount)
+    availability<- (c-f)
+   
+  }
+  
+  f <- as.double(edgeData(gsol,attr="weight"))
+  c <- as.double(edgeData(gsol,attr="capacity"))
+  
+
+  lambda <- min(c/f)
+
+  gamma <- min((c-f)/c)
+  cap<-c
+  
+  
+availability <- c-f
+
+    
+  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
+    
+  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
+
+  plot(load,blocked, type="l", col="Red")
+  
+  
+  plot(gsol)
+  retval <-  list(demands=demands,gflow=gsol,lambda=lambda,gamma=gamma, availability=availability, blocked=blocked, load=load)
+    
+  return(retval)
+}
+
+
+
+### Generate graph to simulate attack graph
+### Warning this only produces a tree at the moment
+rg.gen.attack.graph <- function(depth=4,mindeg=2,maxdeg=5,lower=0.3) {
+
+  nodes <- list()
+  alledges <- list()
+  nodes[[1]] <- c("1")
+  allnodes <- c(nodes[[1]])
+  ## for each level
+  for(i in 2:depth) {
+    cat("creating nodes level ",i,"\n")
+    count <- 1
+    nodes[[i]] <- c()
+
+
+    ## for each node at higher level
+    cat("nodes[i-1]length=",length(nodes[[i-1]]),"\n")
+    first <- TRUE
+    for(j in 1:length(nodes[[i-1]])) {
+      edges <- c()
+
+
+      num <- floor(runif(1,mindeg,maxdeg+1))
+      edges <- c(paste(i,".",as.character(count),sep=""))
+      count <- count +1
+      for(k in 2:num) {
+        edges <- append(edges,paste(i,".",as.character(count),sep=""))
+        count <- count +1
+      }
+      if(first) {
+        nodes[[i]] <- edges
+        first <- FALSE
+      } else {
+        nodes[[i]] <- append(nodes[[i]],edges)
+      }
+
+      ### this does not do anything yet. needs moving up to where each
+      ### new node name is created and add an edge
+      if(runif(1) < lower ) {
+        prevd <- floor(runif(1,1,i+1))
+        prev <- floor(runif(1,1,length(nodes[[prevd]])+1))
+        print("i would connect to")
+        print(nodes[[prevd]][prev])
+      }
+
+      alledges[[nodes[[i-1]][j]]]<- edges
+      
+    }
+    print(nodes[[i]])
+    allnodes <- append(allnodes,nodes[[i]])
+
+  }
+  allnodes <- append(allnodes,"t")
+  for(j in 1:length(nodes[[depth]])) {
+    alledges[[nodes[[depth]][j]]] <- "t"
+  }
+
+  
+  print(alledges)
+  g <- new("graphNEL",nodes=allnodes,edgeL=alledges,"directed")
+
+  ## should not need to do this but some bug seems to be evident if we do not
+  g <- addEdge("t","1",g,1)
+  g <- removeEdge("t","1",g)
+
+  return(g)
+}
+
+### THIS MAY HAVE BUGS!
+### Not a full implementation! This uses the Fleischer maximum commodity
+### flow algorithm to compute an approximate max-flow. THIS IS NOT THE
+### BEST WAY TO DO THIS! but it is all I had "off the shelf"
+### Demands must be less than
+### a valid flow. Once the max-flow is computed it can determine the best
+### s-t cut (the dual problem).
+### g - graphNEL with capacities set
+### s the starting node (character)
+### t the finishing node (characeter)
+### progress - printed progress bar if TRUE
+### e - default=0.05, bound on approximate max-flow
+### tolerance = 0.05 anything with less than this portion of the capacity
+###                  in the flow will be assumed to be a congesting flow
+###                  and will be used to form the cut
+rg.st.cut <- function(g,s,t,progress=TRUE,e=0.05,tolerance=0.05,res=NULL) {
+
+  ### need to do this better as this will be very slow
+  validflow <- min(rg.edgeVector(g,"capacity"))
+  demand <- rg.set.demand(validflow,c(s,t))
+  if(is.null(res)) {
+    res <- rg.fleischer.max.concurrent.flow(g,progress=progress,demands=demand,
+                                            e=e)
+  }
+  flow <- as.double(edgeData(res$gflow,attr="weight"))
+  cap <- as.double(edgeData(res$gflow,attr="capacity"))
+  #cat("(cap-flow)/cap=",(cap-flow)/cap,"\n")
+                   
+  cuts <- NULL
+  gcut <- g
+  for(e in edgeNames(g)) {
+    from <- strsplit(e,"~")[[1]][1]
+    to <- strsplit(e,"~")[[1]][2]
+    cap <- as.double(edgeData(g,from=from,to=to,attr="capacity"))
+    flow <- as.double(edgeData(res$gflow,from=from,to=to,attr="weight"))
+    if( (cap-flow)/cap <= tolerance ) {
+      cuts <- c(cuts,from,to)
+      gcut <- removeEdge(from,to,gcut)
+    }
+  }
+  numcomp <- length(connComp(gcut))
+  if(numcomp !=2 ) {
+    cat("Error, Number of components=",numcomp," it should be 2\n")
+    cat("Returning res, consider passing this back in with lower tolerance\n")
+    return(res)
+  } else {
+    if("1" %in% connComp(gcut)[[1]] ) {
+      if ("t" %in% connComp(gcut)[[2]] ) {
+
+      } else {
+        cat("Something is wrong expecting 1 and t to be in ",
+            "in different components but they are not\n")
+      }
+    } else if ("t" %in% connComp(gcut)[[1]] ) {
+      if ("1" %in% connComp(gcut)[[2]] ) {
+        
+      } else {
+        cat("Something is wrong expecting 1 and t to be in ",
+            "in different components but they are not\n")
+      }
+
+    } else {
+      cat("Something is wrong expecting 1 and t to be in ",
+          "in different components but they are not\n")
+    }
+  }
+  
+  return(cuts)
+}
+
 ### combinations possible with
 ### k hash functions, m length
 rg.bloom.comb <- function(k,m) {

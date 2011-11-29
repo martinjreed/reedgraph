@@ -1413,7 +1413,7 @@ class rg_demandi {
 	igraph_get_shortest_paths_dijkstra(&graph, &vecs, 0, vs,&weights,IGRAPH_OUT);
 
 
-	for (long i=0; i<igraph_vector_ptr_size(&vecs); i++) 
+	/*for (long i=0; i<igraph_vector_ptr_size(&vecs); i++) 
 	  print_vector((igraph_vector_t*)VECTOR(vecs)[i]);
 
 
@@ -1423,7 +1423,7 @@ class rg_demandi {
 	for (int i=0; i<igraph_vector_ptr_size(&vecs); i++) {
 	  igraph_vector_destroy((igraph_vector_t*)VECTOR(vecs)[i]);
 	  free(VECTOR(vecs)[i]);
-	}
+	  }*/
 	
 
 	std::vector<int> permutation = Rcpp::as< std::vector<int> > (Rpermutation);
@@ -1432,6 +1432,8 @@ class rg_demandi {
 	int* dem_sinks_in = INTEGER(demands_sinks_in);
 	int num_dem = asInteger(num_demands_in);
 	double deltaf = asReal(Rdeltaf);
+	std::vector<rg_demand> demands(num_dem);
+
 	for(int i=0 ; i<num_dem; i++) {
 	  demands[i].demand = dem_in[i];
 	  demands[i].flow = 0;
@@ -1439,7 +1441,7 @@ class rg_demandi {
 	  demands[i].sink = vertex(dem_sinks_in[i],gdual);
 	}
 
-	std::vector<rg_demand0> demandsi(num_dem);
+	std::vector<rg_demandi> demandsi(num_dem);
 	for(int i=0 ; i<num_dem; i++) {
 	  demandsi[i].demand = dem_in[i];
 	  demandsi[i].flow = 0;
@@ -1464,6 +1466,7 @@ class rg_demandi {
 	  double c = get(edge_capacity,gdual,e.first);
 	  put(edge_weight,gdual,e.first,delta/c);
 	}
+
 	
 
 	double D;

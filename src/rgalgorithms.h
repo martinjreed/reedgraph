@@ -121,6 +121,8 @@ class rg_demand {
   std::map<const std::vector<rgVertex>,double> path_flow_map;
 };
 
+
+
 int updateExplicitFlow(rg_demand& demand,
 					   std::vector<rgVertex>& penult,
 					   double flow);

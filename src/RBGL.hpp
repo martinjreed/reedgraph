@@ -16,9 +16,20 @@
 #include <boost/property_map/property_map.hpp>
 #include <boost/generator_iterator.hpp>
 
-#include <boost/pending/integer_range.hpp>
+/*
+stvjc@stvjc-VT527AA-ABA-p6340f:~/BIOC_DEVEL/RBGL/src$ ls *0/boost/pending
+bucket_sorter.hpp          indirect_cmp.hpp       mutable_queue.hpp
+container_traits.hpp       integer_log2.hpp       property.hpp
+cstddef.hpp                is_heap.hpp            property_serialize.hpp
+detail                     iterator_adaptors.hpp  queue.hpp
+disjoint_sets.hpp          iterator_tests.hpp     relaxed_heap.hpp
+fenced_priority_queue.hpp  lowest_bit.hpp         stringtok.hpp
+fibonacci_heap.hpp         mutable_heap.hpp
+*/
+
+/* #include <boost/pending/integer_range.hpp> */
 #include <boost/pending/indirect_cmp.hpp>
-#include <boost/pending/ct_if.hpp>
+/* #include <boost/pending/ct_if.hpp> */
 
 #include <boost/type_traits/same_traits.hpp>
 
@@ -79,13 +90,13 @@ public:
                             SEXP num_edges_in,
                             SEXP R_edges_in,
                             SEXP R_weights_in)
-            : Base(asInteger(num_verts_in))
+            : Base(Rf_asInteger(num_verts_in))
     {
-        if (!isNumeric(R_weights_in)) error("R_weights_in should be Numeric");
-        if (!isInteger(R_edges_in)) error("R_edges_in should be integer");
-        int NE = asInteger(num_edges_in);
+        if (!Rf_isNumeric(R_weights_in)) error("R_weights_in should be Numeric");
+        if (!Rf_isInteger(R_edges_in)) error("R_edges_in should be integer");
+        int NE = Rf_asInteger(num_edges_in);
         int* edges_in = INTEGER(R_edges_in);
-        if (isReal(R_weights_in)) {
+        if (Rf_isReal(R_weights_in)) {
             if (boost::is_integral<R_weight_type>::value)
                 error("R_weights_in should be integer");
             else {
@@ -106,10 +117,10 @@ public:
     inline R_adjacency_list(SEXP num_verts_in,
                             SEXP num_edges_in,
                             SEXP R_edges_in)
-            : Base(asInteger(num_verts_in))
+            : Base(Rf_asInteger(num_verts_in))
     {
-        if (!isInteger(R_edges_in)) error("R_edges_in should be integer");
-        int NE = asInteger(num_edges_in);
+        if (!Rf_isInteger(R_edges_in)) error("R_edges_in should be integer");
+        int NE = Rf_asInteger(num_edges_in);
         int* edges_in = INTEGER(R_edges_in);
         for (int i = 0; i < NE ; i++, edges_in += 2) {
             boost::add_edge(*edges_in, *(edges_in+1), 1, *this);
@@ -126,9 +137,6 @@ typedef R_adjacency_list<boost::directedS, int> Graph_di;
 typedef R_adjacency_list<boost::undirectedS, int> Graph_ui;
 typedef R_adjacency_list<boost::directedS, double> Graph_dd;
 typedef R_adjacency_list<boost::undirectedS, double> Graph_ud;
-
-
-
 
 #endif // RBGL_RBGL_H
 

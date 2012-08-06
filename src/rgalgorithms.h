@@ -1,21 +1,19 @@
 // mjreed
-#include <algorithm>
-#include "RBGL.hpp"
-#include "Rcpp.h"
+
+//#include <string>
+#include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
-#include <math.h>
-#include <string>
+//#include <algorithm>
+#include <Rmath.h>
+
 #include <R.h>
-#include <R_ext/Parse.h>
-#include <Rinternals.h>
 
-class Graph_rg
-  : public boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS,
-								 boost::property<boost::vertex_color_t, 
-												 boost::default_color_type>,
-								 boost::property<boost::edge_weight_t, double,
-												 boost::property<boost::edge_capacity_t, double> > >
+#include "RBGL.hpp"
+//#include <Rinternals.h>
+#include "Rcpp.h"
 
+
+class Graph_rg: public boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, boost::property<boost::vertex_color_t,   boost::default_color_type>,  boost::property<boost::edge_weight_t, double,  boost::property<boost::edge_capacity_t, double> > >
 {
   typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS,
 								 boost::property<boost::vertex_color_t, 
@@ -45,14 +43,14 @@ public:
 				  SEXP R_edges_in,
 				  SEXP R_weights_in,
 				  SEXP capacities)
-	: Base(asInteger(num_verts_in))
+    : Base(Rcpp::as<int>(num_verts_in))
     {
-        if (!isReal(R_weights_in)) error("R_weights_in should be Real");
-        if (!isInteger(R_edges_in)) error("R_edges_in should be integer");
-        if (!isReal(capacities)) error("capacities should be Real");
-        int NE = asInteger(num_edges_in);
+        if (!Rf_isReal(R_weights_in)) error("R_weights_in should be Real");
+        if (!Rf_isInteger(R_edges_in)) error("R_edges_in should be integer");
+        if (!Rf_isReal(capacities)) error("capacities should be Real");
+        int NE = Rf_asInteger(num_edges_in);
         int* edges_in = INTEGER(R_edges_in);
-        if (isReal(R_weights_in)) {
+        if (Rf_isReal(R_weights_in)) {
 		  double* weights_in = REAL(R_weights_in);
 		  double* cap_in =REAL(capacities);
 		  for (int i = 0;
@@ -64,15 +62,15 @@ public:
 			boost::put(boost::edge_capacity,*this,e.first,*cap_in);
 		  }
         } 
-	}
+    }
   
     inline Graph_rg(SEXP num_verts_in,
 					SEXP num_edges_in,
 					SEXP R_edges_in)
-	  : Base(asInteger(num_verts_in))
+      : Base(Rcpp::as<int>(num_verts_in))
     {
-	  if (!isInteger(R_edges_in)) error("R_edges_in should be integer");
-	  int NE = asInteger(num_edges_in);
+	  if (!Rf_isInteger(R_edges_in)) error("R_edges_in should be integer");
+	  int NE = Rf_asInteger(num_edges_in);
 	  int* edges_in = INTEGER(R_edges_in);
 	  for (int i = 0; i < NE ; i++, edges_in += 2) {
 		boost::add_edge(*edges_in, *(edges_in+1), 1, *this);
@@ -89,6 +87,7 @@ inline std::string to_string (const T& t)
 }
 
 inline std::string to_string(const int& t);
+
 
 typedef boost::graph_traits < Graph_dd >::edge_descriptor Edge;
 typedef boost::graph_traits < Graph_dd >::vertex_descriptor Vertex;

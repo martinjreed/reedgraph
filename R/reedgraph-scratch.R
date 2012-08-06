@@ -1,177 +1,58 @@
-#***********************************************************************************
-#***********************************************************************************
-### Compute the multicommodity flow in a graph using naive shortest
-### path g graph of type graphNEL with the edge weight variable used
-### for the shortest path and capacities ignored (ie it may overbook
-### an edge)
-### demands: a list each element is a list [source, sink, demand]
+### count number of packets to get one PPM packet from each router
+rg.ppm.count.required <- function(N,p) {
 
-rg.sp.max.concurrent.flow.mays<- function(g,demands) {
-
-
-  for(c in names(demands)) {
-    demands[[c]]$flow <- 0
-  }
-
-  
-  gsol <- g
-  g.sp <- list()
-  gsol.sp <- list()
-  gsol.ds <- list()
-  
- ## f <- as.double(edgeData(gsol,attr="weight"))
- ## c <- as.double(edgeData(gsol,attr="capacity"))
- ##   availability <- 1
-  gsol <- rg.set.all.graph.edge.weights(gsol, 1)
-  
-  ccount <- 1
-  blocked<-c(0)
-  inc<-0
-  load<-c(0)
-
-  for(i in demands) {
-    ## calculate dijkstra.sp if we do not have one for this vertex
-    ##added by Mays
-    cat("from:", i$source,"\n")
-    cat("to:", i$sink, "\n")
-    flg <- 1
-    ##*************
-   ## if(is.null(gsol.sp[[i$source]]))
-    f <- as.double(edgeData(gsol,attr="weight"))
-    c <- as.double(edgeData(gsol,attr="capacity"))
-    availability <- c-f
-
-    cat ("availability:",availability, "\n")
-    w=(1/f)
-    
-    for (j in 1:length(availability)){
-      if (availability[j] < i$demand) {
-	  w[j]=Inf
+  all <- FALSE
+  count <- 0
+  received_marks <- rep(FALSE,N)
+  while(!all) {
+    count <- count + 1
+    mark <- NULL
+    for(i in 1:N) {
+      if(runif(1) < p) {
+        mark <- i
       }
-    } 
-     
-    for (k in 1:length(edges(gsol)[[i$source]])){
-      s<-as.character(i$source)
-      if ((as.double(edgeData(gsol,s,att="capacity")[k])-as.double(edgeData(gsol,s,att="weight")[k]))>= as.list(i$demand)){flg <- 0 
-	break}
     }
-    if (flg == 1){
-      cat ("all links from your source is fully utilized, so demand", ccount, "has been blocked", "\n\n")
-      inc<-inc+1
-      blocked<-append(blocked,inc)
+    if(!is.null(mark)) {
+      received_marks[mark] <- TRUE
     }
-# #just testing at the moment not very solid code**********************************************************************************************
-#     cat("your flag value is", flg,"\n")
-#     
-# 	    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
-# 	    path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
-# 	    print("path=")
-# 	    print(path)
-# 	    for (a in 1:(length(path)-1)){
-# 	    cat("your a is:", path[a], "\n")
-# 	    cat(availability[a],"\n")
-# 	    cat(w[a],"\n")
-# 	    if(w[a]==Inf) { for (a in 1:(length(path)-1)){ edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")<-0
-# 	    cat("path weight is:",as.integer(edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")), "\n") }}}
-#      
-# 
-# #********************************************************************************************************************************************    
-#     
-    #cat ("weight:",f, "\n")
-#   print(edgeMatrix(gsol))
-    if(flg==0) {
-#just testing at the moment not very solid code**********************************************************************************************
-    cat("your flag value is", flg,"\n")
-#     
-# 	    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
-# 	    path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
-# 	    print("path=")
-# 	    print(path)
-# 	    for (a in 1:(length(path)-1)){
-# 	      cat("your vertex is:", path[a], "\n")
-# 	      cat(availability[a],"\n")
-# 	      cat(w[a],"\n")
-# 	      if(w[a]==Inf) { 	
-# 		      for (a in 1:(length(path)-1)){ 
-# 			      edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight") <- (1/0)
-# 			      cat("path weight is:",as.double(edgeData(gsol,as.character(path[a]), as.character(path[a+1]), att="weight")), "\n") 
-# 		      }
-# 		  for (b in 1:length(edges(gsol)[[i$source]])){
-# 				      if(as.double(edgeData(gsol,as.character(i$source),att="weight")[b] == Inf)) flg <- 1 else {
-# 					  flg<-0
-# 					  break
-# 				      }
-# 		  }
-# 	      break
-# 	      }
-# 	    }
-     
-
-#********************************************************************************************************************************************    
-
-    #cat("edgew is", w, "\n")
-    gsol.sp[[i$source]] <- dijkstra.sp(gsol,start=i$source,w)$penult
-    print("output from dijkstra.sp")
-    print(gsol.sp[[i$source]])
-    print("dijkstra.sp distance is:")
-    gsol.ds[[i$sink]] <- dijkstra.sp(gsol,start=i$source,w)$distance
-    print(gsol.ds[[i$sink]][[i$sink]])
-    if (gsol.ds[[i$sink]][[i$sink]]!= Inf){
-      path <- extractPath(i$source,i$sink,gsol.sp[[i$source]])
-      
-                                        #check that the availability on the path is enough to cover the demand
-      
-      print("path=")
-      print(path)
-      cat ("\n","*********************************************","\n")
-      
-      gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
-      demands[[ccount]] <- updateExplicitFlow(gsol,gsol.sp[[i$source]],i$demand,i)
-      demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
-      blocked<-append(blocked,inc)
+    if(sum(received_marks) == N) {
+      break
     }
-    else
-      {
-        cat("there is no enough available capacity to satisfy this Demand", "\n")
-        inc<-inc+1
-        blocked<-append(blocked,inc)
-      }
   }
-    
-    ccount <- ccount + 1
-    load<-append(load,ccount)
-    availability<- (c-f)
-   
-  }
-  
-  f <- as.double(edgeData(gsol,attr="weight"))
-  c <- as.double(edgeData(gsol,attr="capacity"))
-  
 
-  lambda <- min(c/f)
-
-  gamma <- min((c-f)/c)
-  cap<-c
-  
-  
-availability <- c-f
-
-    
-  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
-    
-  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
-
-  plot(load,blocked, type="l", col="Red")
-  
-  
-  plot(gsol)
-  retval <-  list(demands=demands,gflow=gsol,lambda=lambda,gamma=gamma, availability=availability, blocked=blocked, load=load)
-    
-  return(retval)
+  return(count)
 }
 
+rg.ppm.count.required.averaged <- function(N,p,averages) {
 
+  sum <- 0
+  for(i in 1:averages) {
+    sum <- rg.ppm.count.required(N,p) + sum
+  }
+  return(sum/averages)
+}
 
+rg.ppm.savage <- function(N,p) {
+  e <- (log(N)) / ( p*(1-p)^(N-1) )
+  return(e)
+}
+
+rg.ppm.reed <- function(N,p) {
+  sum <- 1
+  for(i in (N-1):0) {
+    print(i)
+    sum <- sum  + 1/ ( p * (1-p)^i )
+  }
+  
+  return(sum)
+}
+
+rg.ppm.test <- function(N,p) {
+
+  prob <- p * (1-p) * (1-p)^2 * (1-p * (1-p))
+
+  return(prob)
+}
 ### Generate graph to simulate attack graph
 ### Warning this only produces a tree at the moment
 rg.gen.attack.graph <- function(depth=4,mindeg=2,maxdeg=5,lower=0.3) {
@@ -310,29 +191,6 @@ rg.st.cut <- function(g,s,t,progress=TRUE,e=0.05,tolerance=0.05,res=NULL) {
   return(cuts)
 }
 
-### combinations possible with
-### k hash functions, m length
-rg.bloom.comb <- function(k,m) {
-
-  prod <- 1.0
-  for(i in m:(m-k+1)) {
-    print(prod)
-    prod <- i * prod
-  }
-  return(prod)
-}
-
-### estimate according to Bose 2007, not quite correct
-### k hash functions, m length, n items in filter
-### this is a strict lower bound for k>=2
-rg.bloom.false <- function(k,m,n) {
-  return((1-(1-1/m)^(k*n))^k)
-}
-
-### optimium k for Bloom filter
-rg.bloom.optimum.k <- function(m,n) {
-  return(log(2) * m /n)
-}
 
 rg.analyse.tests <- function(res) {
 

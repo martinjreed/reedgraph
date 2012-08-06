@@ -565,7 +565,7 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 ###              demands: each with met demand and paths
 
 
-rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="lowest",deltaf=1.0) {
+rg.fleischer.max.concurrent.flow.c.old <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="random",deltaf=1.0) {
 
 
   em <- edgeMatrix(g)
@@ -601,7 +601,9 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   #permutation <- seq(0,length(demands)-1)
 
   #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
-  retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_boost",
+  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
+  #retlist <- .Call("rg_karakostas_max_concurrent_flow_c",
                    as.integer(nv),
                    as.integer(ne),
                    as.integer(em-1),
@@ -674,6 +676,104 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
 
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
                    phases=retlist[[3]][[2]],e=e,
+                   ratio=foundratio,
+                   bound=ratiobound
+                   )
+}
+
+rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="random",deltaf=1.0) {
+
+
+  em <- edgeMatrix(g)
+  nN <- nodes(g)
+  nv <- length(nN)
+  
+  ne <- ncol(em)
+  eW <- unlist(edgeWeights(g))
+
+  cap <- as.double(edgeData(g,attr="capacity"))
+
+  demands.sources <- as.integer(lapply(demands,"[[","source"))
+  demands.sinks <- as.integer(lapply(demands,"[[","sink"))
+  demands.demand <- lapply(demands,"[[","demand")
+
+  doubreq <- 2/e * log(ne/(1-e),base=(1+e))
+
+  if(progress != FALSE) {
+    pb <- txtProgressBar(title = "progress bar", min = 0,
+                        max = doubreq, style=3)
+  } else {
+    pb <- NULL
+  }
+  if(is.numeric(permutation))
+    permutation <- permutation - 1
+  else if(permutation == "fixed")
+    permutation <- 0: (length(demands) -1)
+  else if(permutation == "random")
+    permutation <- -1
+  else if(permutation == "lowest")
+    permutation <- -2
+  
+  #permutation <- seq(0,length(demands)-1)
+
+  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_boost",
+  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
+  #retlist <- .Call("rg_karakostas_max_concurrent_flow_c",
+                   as.integer(nv),
+                   as.integer(ne),
+                   as.integer(em-1),
+                   as.double(eW),
+                   as.double(cap),
+                   as.integer(length(demands)),
+                   as.integer(demands.sources -1 ),
+                   as.integer(demands.sinks -1),
+                   as.double(demands.demand),
+                   as.double(e),
+                   as.logical(updateflow),
+                   pb,
+                   environment(),
+                   progress,
+                   permutation,
+                   deltaf
+                 )
+
+  demands <- retlist$demands
+
+  delta <- deltaf * (ne / (1-e)) ^ (-1/e) 
+
+  scalef <- 1 / log(1/delta,base=(1+e))
+
+  
+  gdual <- g
+
+  fromlist <- edgeMatrix(g)[1,]
+  tolist <- edgeMatrix(g)[2,]
+
+  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist$lengths
+
+  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+
+  beta <- calcBeta(demands,gdual)
+  
+  lambda=NULL
+  if(updateflow) {
+    lambda <- calcLambda(demands)
+    foundratio <- beta / lambda
+    ratiobound <- (1-e)^-3
+  } else {
+    foundratio <- NULL
+    ratiobound <- NULL
+  }
+  
+
+  if( progress != FALSE) {
+    close(pb)
+  }
+
+  retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
+                   phases=retlist$totalphases,e=e,
                    ratio=foundratio,
                    bound=ratiobound
                    )
@@ -1203,6 +1303,7 @@ rg.fleischer.max.concurrent.flow.stats <- function(reslist) {
     cat("Doubling was required!\n")
 }
 
+### Rescale the demands by scalef
 rg.max.concurrent.flow.rescale.demands.flow <- function(demands,scalef) {
   for(dn in names(demands)) {
     demands[[dn]]$flow <- demands[[dn]]$flow * scalef
@@ -1285,9 +1386,9 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 
-rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0) {
+rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
 
-  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode=TRUE,permutation=permutation,deltaf=1.0)
+  res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode,permutation=permutation,deltaf=1.0)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
   
   res$gflow <- rg.max.concurrent.flow.graph(res$gflow,res$demands)

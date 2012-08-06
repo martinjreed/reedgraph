@@ -8,21 +8,21 @@ clean:
 rgalgorithms.so: rgalgorithms.o rgalgorithms_scratch.o
 	R CMD SHLIB rgalgorithms.o rgalgorithms_scratch.o
 
-test:
+#test:
 	echo $(CPPFLAGS)
 
 #	i686-pc-linux-gnu-gcc -std=gnu99 -shared -Wl,-O1 -o rgalgorithms.so rgalgorithms.o -L/home/mjreed/R/i686-pc-linux-gnu-library/2.10/Rcpp/lib -lRcpp -Wl,-rpath,/home/mjreed/R/i686-pc-linux-gnu-library/2.10/Rcpp/lib -L/usr/lib/R/lib -lR
 
-rgalgorithms.h.gch: rgalgorithms.h
-	ccache i686-pc-linux-gnu-g++ -I/usr/lib/R/include  -I/usr/local/include -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.h
+#rgalgorithms.h.gch: rgalgorithms.h
+#	g++ -I/usr/lib/R/include  -I/usr/local/include -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.h
 
 
-rgalgorithms.o: rgalgorithms.cpp rgalgorithms.h rgalgorithms.h.gch
-	 ccache i686-pc-linux-gnu-g++ -I/usr/lib/R/include  -I/usr/local/include -I/usr/local/include/igraph -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.cpp -o rgalgorithms.o
+#rgalgorithms.o: rgalgorithms.cpp rgalgorithms.h rgalgorithms.h.gch
+#	 g++ -I/usr/lib/R/include  -I/usr/local/include -I/usr/local/include/igraph -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms.cpp -o rgalgorithms.o
 
 
-rgalgorithms_scratch.o: rgalgorithms_scratch.cpp rgalgorithms.h rgalgorithms.h.gch
-	ccache i686-pc-linux-gnu-g++ -I/usr/lib/R/include  -I/usr/local/include -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms_scratch.cpp -o rgalgorithms_scratch.o
+#rgalgorithms_scratch.o: rgalgorithms_scratch.cpp rgalgorithms.h rgalgorithms.h.gch
+#	g++ -I/usr/lib/R/include  -I/usr/local/include -I/home/mjreed/R/i686-pc-linux-gnu-library/current/Rcpp/include -fpic -Wno-deprecated $(CPPFLAGS) -march=i686 -pipe -c rgalgorithms_scratch.cpp -o rgalgorithms_scratch.o
 
 #R CMD COMPILE CCFLAGS="-g" rgalgorithms.cpp
 

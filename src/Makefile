@@ -1,14 +1,14 @@
-CPPFLAGS = -g
+#CPPFLAGS = -g
 #CPPFLAGS = -O2
-all: rgalgorithms.so rgalgorithms.o
+all: rgalgorithms.so
 
 clean:
-	rm -f rgalgorithms.so rgalgorithms.o rgalgorithms_scratch.o *.gch
+	rm -f *.so *.o
 
-rgalgorithms.so: rgalgorithms.o rgalgorithms_scratch.o
-	R CMD SHLIB rgalgorithms.o rgalgorithms_scratch.o
+rgalgorithms.so: rgalgorithms-igraph.cpp rgalgorithms-recover.cpp 
+	R CMD SHLIB -o rgalgorithms.so rgalgorithms-igraph.cpp rgalgorithms-recover.cpp 
 
-#test:
+test:
 	echo $(CPPFLAGS)
 
 #	i686-pc-linux-gnu-gcc -std=gnu99 -shared -Wl,-O1 -o rgalgorithms.so rgalgorithms.o -L/home/mjreed/R/i686-pc-linux-gnu-library/2.10/Rcpp/lib -lRcpp -Wl,-rpath,/home/mjreed/R/i686-pc-linux-gnu-library/2.10/Rcpp/lib -L/usr/lib/R/lib -lR

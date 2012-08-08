@@ -1,4 +1,5 @@
 # compile flag providing header directory containing Rcpp.h
 PKG_CXXFLAGS=`Rscript -e 'Rcpp:::CxxFlags()'` -I/opt/local/include -I/opt/local/include/igraph 
+#PKG_CXXFLAGS=`Rscript -e 'Rcpp:::CxxFlags()'`
 # link flag providing libary as well as path to library, and optionally rpath
 PKG_LIBS=`Rscript -e 'Rcpp:::LdFlags()'`

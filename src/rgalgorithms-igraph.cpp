@@ -1,3 +1,22 @@
+/*
+    Copyright (C) 2012 Martin J Reed              martin@reednet.org.uk
+    University of Essex, Colchester, UK
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <R.h>
 #include <igraph.h>
 #include <vector>
@@ -17,15 +36,6 @@
 #endif
 
 
-#define IGRAPH_THREAD_LOCAL 
-
-extern IGRAPH_THREAD_LOCAL igraph_interruption_handler_t 
-  *igraph_i_interruption_handler;
-
-#define IGRAPH_ALLOW_INTERRUPTION() \
-       do { \
-       if (igraph_i_interruption_handler) { if (igraph_allow_interruption(NULL) != IGRAPH_SUCCESS) return IGRAPH_INTERRUPTED; \
-       } } while (0)
 
 
 class rg_demandi {
@@ -74,36 +84,6 @@ int updateExplicitFlowi(rg_demandi& demand,
 
 __BEGIN_DECLS
 
-typedef struct igraph_2wheap_t {
-  long int size;
-  igraph_vector_t data;
-  igraph_vector_long_t index;
-  igraph_vector_long_t index2;
-} igraph_2wheap_t;
-
-int igraph_2wheap_init(igraph_2wheap_t *h, long int size);
-void igraph_2wheap_destroy(igraph_2wheap_t *h);
-int igraph_2wheap_clear(igraph_2wheap_t *h);
-int igraph_2wheap_push_with_index(igraph_2wheap_t *h, 
-				  long int idx, igraph_real_t elem);
-igraph_bool_t igraph_2wheap_empty(const igraph_2wheap_t *h);
-long int igraph_2wheap_size(const igraph_2wheap_t *h);
-long int igraph_2wheap_max_size(const igraph_2wheap_t *h);
-igraph_real_t igraph_2wheap_max(const igraph_2wheap_t *h);
-long int igraph_2wheap_max_index(const igraph_2wheap_t *h);
-igraph_real_t igraph_2wheap_deactivate_max(igraph_2wheap_t *h);
-igraph_bool_t igraph_2wheap_has_elem(const igraph_2wheap_t *h, long int idx);
-igraph_bool_t igraph_2wheap_has_active(const igraph_2wheap_t *h, long int idx);
-igraph_real_t igraph_2wheap_get(const igraph_2wheap_t *h, long int idx);
-igraph_real_t igraph_2wheap_delete_max(igraph_2wheap_t *h);
-igraph_real_t igraph_2wheap_delete_max_index(igraph_2wheap_t *h, long int *idx);
-int igraph_2wheap_modify(igraph_2wheap_t *h, long int idx, igraph_real_t elem);
-int igraph_2wheap_check(igraph_2wheap_t *h);
-
-#define IGRAPH_ALLOW_INTERRUPTION() \
-       do { \
-       if (igraph_i_interruption_handler) { if (igraph_allow_interruption(NULL) != IGRAPH_SUCCESS) return IGRAPH_INTERRUPTED; \
-       } } while (0)
 
 
 int igraph_get_shortest_paths_dijkstra_mod(const igraph_t *graph,
@@ -293,189 +273,7 @@ void igraph_rg_fleischer_max_concurrent_flow(std::vector<long> vedges,
 
 }
 
-int igraph_get_shortest_paths_dijkstra_mod(const igraph_t *graph,
-                                       igraph_vector_ptr_t *vertices,
-				       igraph_vector_ptr_t *edges,
-				       igraph_integer_t from,
-				       igraph_vs_t to,
-				       const igraph_vector_t *weights,
-				       igraph_neimode_t mode) {
-  /* Implementation details. This is the basic Dijkstra algorithm, 
-     with a binary heap. The heap is indexed, i.e. it stores not only
-     the distances, but also which vertex they belong to. The other
-     mapping, i.e. getting the distance for a vertex is not in the
-     heap (that would by the double-indexed heap), but in the result
-     matrix.
 
-     Dirty tricks:
-     - the opposite of the distance is stored in the heap, as it is a
-       maximum heap and we need a minimum heap.
-     - we don't use IGRAPH_INFINITY in the distance vector during the
-       computation, as IGRAPH_FINITE() might involve a function call 
-       and we want to spare that. So we store distance+1.0 instead of 
-       distance, and zero denotes infinity.
-     - `parents' assigns the predecessors of all vertices in the
-       shortest path tree to the vertices. In this implementation, the
-       vertex ID + 1 is stored, zero means unreachable vertices.
-  */
-  
-  long int no_of_nodes=igraph_vcount(graph);
-  long int no_of_edges=igraph_ecount(graph);
-  igraph_vit_t vit;
-  igraph_2wheap_t Q;
-  igraph_lazy_inclist_t inclist;
-  igraph_vector_t dists;
-  long int *parents;
-  igraph_bool_t *is_target;
-  long int i,to_reach;
-
-  if (!weights) {
-    return igraph_get_shortest_paths(graph, vertices, edges, from, to, mode);
-  }
-  
-  if (igraph_vector_size(weights) != no_of_edges) {
-    IGRAPH_ERROR("Weight vector length does not match", IGRAPH_EINVAL);
-  }
-  if (igraph_vector_min(weights) < 0) {
-    IGRAPH_ERROR("Weight vector must be non-negative", IGRAPH_EINVAL);
-  }
-
-  IGRAPH_CHECK(igraph_vit_create(graph, to, &vit));
-  IGRAPH_FINALLY(igraph_vit_destroy, &vit);
-
-  if (vertices && IGRAPH_VIT_SIZE(vit) != igraph_vector_ptr_size(vertices)) {
-    IGRAPH_ERROR("Size of `vertices' and `to' should match", IGRAPH_EINVAL);
-  }
-  if (edges && IGRAPH_VIT_SIZE(vit) != igraph_vector_ptr_size(edges)) {
-    IGRAPH_ERROR("Size of `edges' and `to' should match", IGRAPH_EINVAL);
-  }
-
-  IGRAPH_CHECK(igraph_2wheap_init(&Q, no_of_nodes));
-  IGRAPH_FINALLY(igraph_2wheap_destroy, &Q);
-  IGRAPH_CHECK(igraph_lazy_inclist_init(graph, &inclist, mode));
-  IGRAPH_FINALLY(igraph_lazy_inclist_destroy, &inclist);
-
-  IGRAPH_VECTOR_INIT_FINALLY(&dists, no_of_nodes);
-  //mjreed added
-  for(i=0;i<no_of_nodes;i++) VECTOR(dists)[i]=-1.0;
-  // end mjreed added
-
-  parents = igraph_Calloc(no_of_nodes, long int);
-  if (parents == 0) IGRAPH_ERROR("Can't calculate shortest paths", IGRAPH_ENOMEM);
-  IGRAPH_FINALLY(igraph_free, parents);
-  is_target = igraph_Calloc(no_of_nodes, igraph_bool_t);
-  if (is_target == 0) IGRAPH_ERROR("Can't calculate shortest paths", IGRAPH_ENOMEM);
-  IGRAPH_FINALLY(igraph_free, is_target);
-
-  /* Mark the vertices we need to reach */
-  to_reach=IGRAPH_VIT_SIZE(vit);
-  for (IGRAPH_VIT_RESET(vit); !IGRAPH_VIT_END(vit); IGRAPH_VIT_NEXT(vit)) {
-    if (!is_target[ (long int) IGRAPH_VIT_GET(vit) ]) {
-      is_target[ (long int) IGRAPH_VIT_GET(vit) ] = 1;
-    } else {
-      to_reach--;		/* this node was given multiple times */
-    }
-  }
-
-  //VECTOR(dists)[(long int)from] = 1.0;	/* zero distance */
-  parents[(long int)from] = 0;
-  VECTOR(dists)[(long int)from] = 0.0;	/* zero distance */
-  igraph_2wheap_push_with_index(&Q, from, 0);
-    
-  while (!igraph_2wheap_empty(&Q) && to_reach > 0) {
-    long int nlen, minnei=igraph_2wheap_max_index(&Q);
-    igraph_real_t mindist=-igraph_2wheap_delete_max(&Q);
-    igraph_vector_t *neis;
-
-    IGRAPH_ALLOW_INTERRUPTION();
-
-    if (is_target[minnei]) {
-      is_target[minnei] = 0;
-	  to_reach--;
-	}
-
-    /* Now check all neighbors of 'minnei' for a shorter path */
-    neis=igraph_lazy_inclist_get(&inclist, minnei);
-    nlen=igraph_vector_size(neis);
-    for (i=0; i<nlen; i++) {
-      long int edge=VECTOR(*neis)[i];
-      long int tto=IGRAPH_OTHER(graph, edge, minnei);
-      igraph_real_t altdist=mindist + VECTOR(*weights)[edge];
-      igraph_real_t curdist=VECTOR(dists)[tto];
-      //if (curdist==0) {
-      if (curdist<0) {
-        /* This is the first non-infinite distance */
-        //VECTOR(dists)[tto] = altdist+1.0;
-	VECTOR(dists)[tto] = altdist;
-        parents[tto] = edge+1;
-        IGRAPH_CHECK(igraph_2wheap_push_with_index(&Q, tto, -altdist));
-	//} else if (altdist < curdist-1) {
-      } else if (altdist < curdist) {
-	      /* This is a shorter path */
-        //VECTOR(dists)[tto] = altdist+1.0;
-	VECTOR(dists)[tto] = altdist;
-	parents[tto] = edge+1;
-        IGRAPH_CHECK(igraph_2wheap_modify(&Q, tto, -altdist));
-      }
-    }
-  } /* !igraph_2wheap_empty(&Q) */
-
-  if (to_reach > 0) IGRAPH_WARNING("Couldn't reach some vertices");
-
-  /* Reconstruct the shortest paths based on vertex and/or edge IDs */
-  if (vertices || edges) {
-    for (IGRAPH_VIT_RESET(vit), i=0; !IGRAPH_VIT_END(vit); IGRAPH_VIT_NEXT(vit), i++) {
-      long int node=IGRAPH_VIT_GET(vit);
-      igraph_vector_t *vvec=0, *evec=0;
-      if (vertices) {
-	vvec=(igraph_vector_t*)VECTOR(*vertices)[i];
-	igraph_vector_clear(vvec);
-      }
-      if (edges) {
-	evec=(igraph_vector_t*)VECTOR(*edges)[i];
-	igraph_vector_clear(evec);
-      }
-      
-      IGRAPH_ALLOW_INTERRUPTION();
-      
-      if (parents[node]>0) {
-	long int size=0;
-	long int act=node;
-	long int edge;
-	while (parents[act]) {
-	  size++;
-	  edge=parents[act]-1;
-	  act=IGRAPH_OTHER(graph, edge, act);
-	}
-	if (vvec) { 
-	  IGRAPH_CHECK(igraph_vector_resize(vvec, size+1)); 
-	  VECTOR(*vvec)[size]=node;
-	}
-	if (evec) {
-	  IGRAPH_CHECK(igraph_vector_resize(evec, size));
-	}
-	act=node;
-	while (parents[act]) {
-	  edge=parents[act]-1;
-	  act=IGRAPH_OTHER(graph, edge, act);
-	  size--;
-	  if (vvec) { VECTOR(*vvec)[size]=act; }
-	  if (evec) { VECTOR(*evec)[size]=edge; }
-	}
-      }
-    }
-  }
-  
-  igraph_lazy_inclist_destroy(&inclist);
-  igraph_2wheap_destroy(&Q);
-  igraph_vector_destroy(&dists);
-  igraph_Free(is_target);
-  igraph_Free(parents);
-  igraph_vit_destroy(&vit);
-  IGRAPH_FINALLY_CLEAN(6);
-  
-  return 0;
-}
 
 
 

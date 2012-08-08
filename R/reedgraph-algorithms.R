@@ -716,10 +716,9 @@ rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,p
   
   #permutation <- seq(0,length(demands)-1)
 
-  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
-  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_boost",
+  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_boost",
   #retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
-  #retlist <- .Call("rg_karakostas_max_concurrent_flow_c",
                    as.integer(nv),
                    as.integer(ne),
                    as.integer(em-1),

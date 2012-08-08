@@ -1,7 +1,8 @@
-//#include "config.h"
-//#include "memory.h"
+#include <boost/lexical_cast.hpp>
+#include <R.h>
+#include <Rcpp.h>
+#include <Rinternals.h>
 #include "rgalgorithms.h"
-
 #undef __BEGIN_DECLS
 #undef __END_DECLS
 #ifdef __cplusplus
@@ -11,8 +12,6 @@
 # define __BEGIN_DECLS /* empty */
 # define __END_DECLS /* empty */
 #endif
-
-
 
 
 
@@ -30,7 +29,6 @@ public:
     return (a.first > b.first);
   }
 };
-
 
 int updateExplicitFlow(rg_demand& demand,
 		       std::vector<rgVertex>& penult,
@@ -90,13 +88,32 @@ double calcD(Graph_rg& gdual) {
 }
 
 
-
 __BEGIN_DECLS
 
-  
 void rg_cversion() {
-  Rprintf("Version 1.1");
+  Rprintf("Version 2.0");
 }
+
+
+class rg_demandi {
+public:
+  double flow;
+  long source;
+  long sink;
+  double demand;
+  std::map< std::vector< long > ,double > path_flow_map;
+};
+
+
+void igraph_rg_fleischer_max_concurrent_flow(std::vector<long> vedges,
+					     std::vector<double> capacities,
+					     std::vector<rg_demandi> &demands,
+					     std::vector<double> &lengths,
+					     double e,
+					     long N,
+					     long &totalphases);
+
+
 
 // extract path from dijkstra_shortest_paths predecessor map
 // s source node, f destination node
@@ -151,7 +168,7 @@ SEXP rg_num_edge_disjoint_paths_c(SEXP num_verts_in,
 
   // set up a return matrix and set it to zero
   SEXP count;
-  PROTECT(count = allocMatrix(INTSXP,N,N));
+  PROTECT(count = Rf_allocMatrix(INTSXP,N,N));
   int* countp;
   countp = INTEGER(count);
   for(int i=0;i<N;i++)
@@ -232,11 +249,11 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
 					     ) {
   using namespace boost;
   bool progress=false;
-  bool updateflow=asLogical(Rupdateflow);
+  bool updateflow=Rf_asLogical(Rupdateflow);
   std::string title("");
-  if ( isLogical(Rprogress) ) {
-    progress=asLogical(Rprogress);
-  } else if ( isString(Rprogress) ) {
+  if ( Rf_isLogical(Rprogress) ) {
+    progress=Rf_asLogical(Rprogress);
+  } else if ( Rf_isString(Rprogress) ) {
     title = std::string(CHAR(STRING_ELT(Rprogress,0)));
     progress=true;
   }
@@ -245,7 +262,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
   double* dem_in = REAL(demands_in);
   int* dem_sources_in = INTEGER(demands_sources_in);
   int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = asInteger(num_demands_in);
+  int num_dem = Rf_asInteger(num_demands_in);
   std::vector<rg_demand> demands(num_dem);
   for(int i=0 ; i<num_dem; i++) {
     demands[i].demand = dem_in[i];
@@ -255,7 +272,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
   }
   int N = num_vertices(gdual);
   int m = num_edges(gdual);
-  double e = asReal(Re);
+  double e = Rf_asReal(Re);
   int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e);
@@ -289,7 +306,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
 	
   char cmd[256];
   //ansxp = eval(cmdexpr,env);
@@ -318,10 +335,10 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
     if(progress && totalphases % updatepb ==0 ) {
       // calls R to update progress bar
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       UNPROTECT(1);
     }	  
 		
@@ -407,12 +424,12 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
 
   // set up return expressions
   SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = allocVector(REALSXP,m));
-  PROTECT(flowsxp = allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = allocVector(VECSXP,5));
+  PROTECT(duallenxp = Rf_allocVector(REALSXP,m));
+  PROTECT(flowsxp = Rf_allocVector(REALSXP,num_dem));
+  PROTECT(lenxp = Rf_allocVector(INTSXP,3));
+  PROTECT(pmapkeyxp = Rf_allocVector(VECSXP,num_dem_p_flows * 2));
+  PROTECT(pmapvalxp = Rf_allocVector(REALSXP,num_dem_p_flows));
+  PROTECT(retlistxp = Rf_allocVector(VECSXP,5));
 
   INTEGER(lenxp)[0] = num_dem_p_flows;
   INTEGER(lenxp)[1] = totalphases;
@@ -449,11 +466,11 @@ SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
       }
       SEXP pathsxp, demsxp;
       // create the demand string identifier
-      PROTECT(demsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,mkChar(sdem.c_str()));
+      PROTECT(demsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(demsxp,0,Rf_mkChar(sdem.c_str()));
       // create the path string
-      PROTECT(pathsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,mkChar(spath.c_str()));
+      PROTECT(pathsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(pathsxp,0,Rf_mkChar(spath.c_str()));
       SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
       SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
       REAL(pmapvalxp)[n++] = val;
@@ -662,7 +679,7 @@ SEXP rg_max_concurrent_flow_capacity_restricted_c
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
   int i=0;
   while( D < 1.0) {
     if(phases > doubreq) {
@@ -677,10 +694,10 @@ SEXP rg_max_concurrent_flow_capacity_restricted_c
 
     if(progress != false && totalphases % updatepb == 0) {
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }
@@ -805,7 +822,7 @@ SEXP rg_fleischer_max_concurrent_flow_restricted_c
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
   int i=0;
   int countgamma=0;
   double bestgamma= -DBL_MAX;
@@ -829,10 +846,10 @@ SEXP rg_fleischer_max_concurrent_flow_restricted_c
 
     if(progress != false && totalphases % updatepb == 0) {
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }
@@ -967,11 +984,11 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
 					) {
   using namespace boost;
   bool progress=false;
-  bool updateflow=asLogical(Rupdateflow);
+  bool updateflow=Rcpp::as<bool>(Rupdateflow);
   std::string title("");
-  if ( isLogical(Rprogress) ) {
-    progress=asLogical(Rprogress);
-  } else if ( isString(Rprogress) ) {
+  if ( Rf_isLogical(Rprogress) ) {
+    progress=Rcpp::as<bool>(Rprogress);
+  } else if ( Rf_isString(Rprogress) ) {
     title = std::string(CHAR(STRING_ELT(Rprogress,0)));
     progress=true;
   }
@@ -981,8 +998,8 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   double* dem_in = REAL(demands_in);
   int* dem_sources_in = INTEGER(demands_sources_in);
   int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = asInteger(num_demands_in);
-  double deltaf = asReal(Rdeltaf);
+  int num_dem = Rcpp::as<long>(num_demands_in);
+  double deltaf = Rcpp::as<double>(Rdeltaf);
   std::vector<rg_demand> demands(num_dem);
   for(int i=0 ; i<num_dem; i++) {
     demands[i].demand = dem_in[i];
@@ -992,7 +1009,7 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   }
   int N = num_vertices(gdual);
   int m = num_edges(gdual);
-  double e = asReal(Re);
+  double e = Rcpp::as<double>(Re);
   int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
@@ -1036,10 +1053,10 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
 	
   char cmd[256];
-  //ansxp = eval(cmdexpr,env);
+  //ansxp = Rf_eval(cmdexpr,env);
 
   double a = pow(2.0,-130);
   double b =1;
@@ -1093,10 +1110,10 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
     if(progress && totalphases % updatepb ==0 ) {
       // calls R to update progress bar
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }	  
@@ -1271,12 +1288,12 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
 
   // set up return expressions
   SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = allocVector(REALSXP,m));
-  PROTECT(flowsxp = allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = allocVector(VECSXP,5));
+  PROTECT(duallenxp = Rf_allocVector(REALSXP,m));
+  PROTECT(flowsxp = Rf_allocVector(REALSXP,num_dem));
+  PROTECT(lenxp = Rf_allocVector(INTSXP,3));
+  PROTECT(pmapkeyxp = Rf_allocVector(VECSXP,num_dem_p_flows * 2));
+  PROTECT(pmapvalxp = Rf_allocVector(REALSXP,num_dem_p_flows));
+  PROTECT(retlistxp = Rf_allocVector(VECSXP,5));
 
   INTEGER(lenxp)[0] = num_dem_p_flows;
   INTEGER(lenxp)[1] = totalphases;
@@ -1313,11 +1330,11 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
       }
       SEXP pathsxp, demsxp;
       // create the demand string identifier
-      PROTECT(demsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,mkChar(sdem.c_str()));
+      PROTECT(demsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(demsxp,0,Rf_mkChar(sdem.c_str()));
       // create the path string
-      PROTECT(pathsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,mkChar(spath.c_str()));
+      PROTECT(pathsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(pathsxp,0,Rf_mkChar(spath.c_str()));
       SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
       SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
       REAL(pmapvalxp)[n++] = val;
@@ -1355,11 +1372,11 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
 					 ) {
   using namespace boost;
   bool progress=false;
-  bool updateflow=asLogical(Rupdateflow);
+  bool updateflow=Rcpp::as<bool>(Rupdateflow);
   std::string title("");
-  if ( isLogical(Rprogress) ) {
-    progress=asLogical(Rprogress);
-  } else if ( isString(Rprogress) ) {
+  if ( Rf_isLogical(Rprogress) ) {
+    progress=Rcpp::as<bool>(Rprogress);
+  } else if ( Rf_isString(Rprogress) ) {
     title = std::string(CHAR(STRING_ELT(Rprogress,0)));
     progress=true;
   }
@@ -1369,8 +1386,8 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   double* dem_in = REAL(demands_in);
   int* dem_sources_in = INTEGER(demands_sources_in);
   int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = asInteger(num_demands_in);
-  double deltaf = asReal(Rdeltaf);
+  int num_dem = Rcpp::as<long>(num_demands_in);
+  double deltaf = Rcpp::as<double>(Rdeltaf);
   std::vector<rg_demand> demands(num_dem);
   for(int i=0 ; i<num_dem; i++) {
     demands[i].demand = dem_in[i];
@@ -1380,7 +1397,7 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   }
   int N = num_vertices(gdual);
   int m = num_edges(gdual);
-  double e = asReal(Re);
+  double e = Rcpp::as<double>(Re);
   int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
@@ -1424,10 +1441,10 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
 	
   char cmd[256];
-  //ansxp = eval(cmdexpr,env);
+  //ansxp = Rf_eval(cmdexpr,env);
 
   double a = pow(2.0,-130);
   double b =1;
@@ -1481,10 +1498,10 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
     if(progress && totalphases % updatepb ==0 ) {
       // calls R to update progress bar
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }	  
@@ -1659,12 +1676,12 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
 
   // set up return expressions
   SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = allocVector(REALSXP,m));
-  PROTECT(flowsxp = allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = allocVector(VECSXP,5));
+  PROTECT(duallenxp = Rf_allocVector(REALSXP,m));
+  PROTECT(flowsxp = Rf_allocVector(REALSXP,num_dem));
+  PROTECT(lenxp = Rf_allocVector(INTSXP,3));
+  PROTECT(pmapkeyxp = Rf_allocVector(VECSXP,num_dem_p_flows * 2));
+  PROTECT(pmapvalxp = Rf_allocVector(REALSXP,num_dem_p_flows));
+  PROTECT(retlistxp = Rf_allocVector(VECSXP,5));
 
   INTEGER(lenxp)[0] = num_dem_p_flows;
   INTEGER(lenxp)[1] = totalphases;
@@ -1701,11 +1718,11 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
       }
       SEXP pathsxp, demsxp;
       // create the demand string identifier
-      PROTECT(demsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,mkChar(sdem.c_str()));
+      PROTECT(demsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(demsxp,0,Rf_mkChar(sdem.c_str()));
       // create the path string
-      PROTECT(pathsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,mkChar(spath.c_str()));
+      PROTECT(pathsxp = Rf_allocVector(STRSXP,1));
+      SET_STRING_ELT(pathsxp,0,Rf_mkChar(spath.c_str()));
       SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
       SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
       REAL(pmapvalxp)[n++] = val;
@@ -1746,20 +1763,17 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
 					      ) {
   using namespace boost;
   bool progress=false;
-  bool updateflow=asLogical(Rupdateflow);
+  bool updateflow=Rcpp::as<bool>(Rupdateflow);
   std::string title("");
-  if ( isLogical(Rprogress) ) {
-    progress=asLogical(Rprogress);
-  } else if ( isString(Rprogress) ) {
+  if ( Rf_isLogical(Rprogress) ) {
+    progress=Rcpp::as<bool>(Rprogress);
+  } else if ( Rf_isString(Rprogress) ) {
     title = std::string(CHAR(STRING_ELT(Rprogress,0)));
     progress=true;
   }
   Graph_rg gdual(num_verts_in, num_edges_in, R_edges_in, R_weights_in,capacities_in);
 	
   std::vector<long> vedges = Rcpp::as< std::vector<long> > (R_edges_in);
-
-  igraph_t graph;
-
 
   std::vector<double> capacities = Rcpp::as< std::vector<double> > (capacities_in);
   int N = Rcpp::as<int>(num_verts_in);
@@ -1769,8 +1783,8 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
   double* dem_in = REAL(demands_in);
   int* dem_sources_in = INTEGER(demands_sources_in);
   int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = asInteger(num_demands_in);
-  double deltaf = asReal(Rdeltaf);
+  int num_dem = Rcpp::as<long>(num_demands_in);
+  double deltaf = Rcpp::as<double>(Rdeltaf);
   std::vector<rg_demand> demands(num_dem);
 
   for(int i=0 ; i<num_dem; i++) {
@@ -1781,7 +1795,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
   }
 
 
-  double e = asReal(Re);
+  double e = Rcpp::as<double>(Re);
   int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
@@ -1817,10 +1831,10 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
 	
   char cmd[256];
-  //ansxp = eval(cmdexpr,env);
+  //ansxp = Rf_eval(cmdexpr,env);
 
   double a = pow(2.0,-130);
   double b =1;
@@ -1874,10 +1888,10 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
     if(progress && totalphases % updatepb ==0 ) {
       // calls R to update progress bar
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }	  
@@ -1996,35 +2010,28 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
   // demand[].[pathmap] key and values
 
   // set up return expressions
-  SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = allocVector(REALSXP,m));
-  PROTECT(flowsxp = allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = allocVector(VECSXP,5));
-
-  INTEGER(lenxp)[0] = num_dem_p_flows;
-  INTEGER(lenxp)[1] = totalphases;
+  std::vector<double> lengths(m);
 
   int* edges_in = INTEGER(R_edges_in);
   for (int i = 0;
        i < m ; 
        i++, edges_in += 2) {
     std::pair<rgEdge, bool> ed = edge(vertex(*edges_in,gdual),vertex(*(edges_in+1),gdual), gdual);
-    REAL(duallenxp)[i] = get(edge_weight,gdual,ed.first);
+    lengths[i] = get(edge_weight,gdual,ed.first);
   }
-
-  int i=0;
-  int j=0;
-  int k=0;
-  int l=0;
-  int n=0;
-  for(vi=demands.begin(); vi < demands.end(); vi++, i++) {
-    REAL(flowsxp)[i]= vi->flow;
-	  
+  Rcpp::List retdemandsi;
+  for(int i=0 ; i<num_dem; i++) {
+    Rcpp::List demand;
+    demand.push_back(demands[i].demand,"demand");
+    demand.push_back(demands[i].flow,"flow");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].source+1),
+			     "source");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].sink+1)
+			     ,"sink");
+    Rcpp::List paths;
     std::map<const std::vector<rgVertex>, double>::iterator pmi, pmend;
-    for(pmi=vi->path_flow_map.begin(); pmi != vi->path_flow_map.end(); pmi++) {
+    for(pmi=demands[i].path_flow_map.begin();
+	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::vector<rgVertex> path = pmi->first;
       double val = pmi->second;
       std::vector<rgVertex>::reverse_iterator vi, vend;
@@ -2037,28 +2044,22 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
 	spath.append("|");
 	spath.append(to_string<int>(*vi + 1));
       }
-      SEXP pathsxp, demsxp;
-      // create the demand string identifier
-      PROTECT(demsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,mkChar(sdem.c_str()));
-      // create the path string
-      PROTECT(pathsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,mkChar(spath.c_str()));
-      SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
-      SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
-      REAL(pmapvalxp)[n++] = val;
-      UNPROTECT(2);
+      paths.push_back(pmi->second,spath.c_str());
     }
-		
+    demand.push_back(paths,"paths");
+    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
+
   }
-	
-  SET_VECTOR_ELT(retlistxp,0,duallenxp);
-  SET_VECTOR_ELT(retlistxp,1,flowsxp);
-  SET_VECTOR_ELT(retlistxp,2,lenxp);
-  SET_VECTOR_ELT(retlistxp,3,pmapkeyxp);
-  SET_VECTOR_ELT(retlistxp,4,pmapvalxp);
-  UNPROTECT(7);
-  return(retlistxp);
+  
+
+  
+  Rcpp::List retlist;
+  retlist.push_back(retdemandsi,"demands");
+  retlist.push_back(totalphases,"totalphases");
+  retlist.push_back(lengths,"lengths");
+  UNPROTECT(1);
+  
+  return wrap(retlist);
   
 }
 
@@ -2164,7 +2165,7 @@ SEXP rg_max_concurrent_flow_int_c
   std::vector<double> vdemands = Rcpp::as< std::vector<double> > (Rdemands);
   std::vector<double> origdemands(vdemands);	
   std::vector<int> permutation = Rcpp::as< std::vector<int> > (Rpermutation);
-  double deltaf = asReal(Rdeltaf);
+  double deltaf = Rcpp::as<double>(Rdeltaf);
 
   int numD = vdemands.size();
   std::vector<double>::iterator vecdit;
@@ -2229,7 +2230,7 @@ SEXP rg_max_concurrent_flow_int_c
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
 
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
   int i=0;
   int countgamma=0;
   double bestgamma= -DBL_MAX;
@@ -2307,10 +2308,10 @@ SEXP rg_max_concurrent_flow_int_c
     }
     if(progress != false && totalphases % updatepb == 0) {
       sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       //Rprintf("D=%lg\n",D);
       UNPROTECT(1);
     }
@@ -2671,17 +2672,17 @@ SEXP rg_test_every_path_inner
   char cmd[256];
   SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
   ParseStatus status;
-  PROTECT(cmdsxp = allocVector(STRSXP,1));
+  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
   long updatepb = pathcomb / 100.0;
 
   while(!finished) {
 
     if(progress != false && count % updatepb == 0) {
       sprintf(cmd,"setTxtProgressBar(pb,%ld)",count);
-      SET_STRING_ELT(cmdsxp,0,mkChar(cmd));
+      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
       cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < length(cmdexpr); i++)
-	ansxp = eval(VECTOR_ELT(cmdexpr, i), env);
+      for(int i = 0; i < Rf_length(cmdexpr); i++)
+	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
       UNPROTECT(1);
     }
 	  
@@ -2770,169 +2771,6 @@ SEXP rg_test_every_path_inner
 }
 
 
-int igraph_get_shortest_paths_dijkstra_test(const igraph_t *graph,
-					    igraph_vector_ptr_t *res,
-					    igraph_integer_t from,
-					    igraph_vs_t to,
-					    const igraph_vector_t *weights,
-					    igraph_neimode_t mode) {
-  /* Implementation details. This is the basic Dijkstra algorithm, 
-     with a binary heap. The heap is indexed, i.e. it stores not only
-     the distances, but also which vertex they belong to. The other
-     mapping, i.e. getting the distance for a vertex is not in the
-     heap (that would by the double-indexed heap), but in the result
-     matrix.
-
-     Dirty tricks:
-     - the opposite of the distance is stored in the heap, as it is a
-     maximum heap and we need a minimum heap.
-     - we don't use IGRAPH_INFINITY in the distance vector during the
-     computation, as IGRAPH_FINITE() might involve a function call 
-     and we want to spare that. So we store distance+1.0 instead of 
-     distance, and zero denotes infinity.
-     - `parents' assigns the predecessors of all vertices in the
-     shortest path tree to the vertices. In this implementation, the
-     vertex ID + 1 is stored, zero means unreachable vertices.
-  */
-  
-  long int no_of_nodes=igraph_vcount(graph);
-  long int no_of_edges=igraph_ecount(graph);
-  igraph_vit_t vit;
-  igraph_indheap_t Q;
-  igraph_lazy_adjedgelist_t adjlist;
-  igraph_vector_t dists;
-  long int *parents;
-  igraph_bool_t *is_target;
-  long int i,to_reach;
-    
-  if (!weights) {
-    return igraph_get_shortest_paths(graph, res, from, to, mode);
-  }
-  
-  if (igraph_vector_size(weights) != no_of_edges) {
-    IGRAPH_ERROR("Weight vector length does not match", IGRAPH_EINVAL);
-  }
-  if (igraph_vector_min(weights) < 0) {
-    IGRAPH_ERROR("Weight vector must be non-negative", IGRAPH_EINVAL);
-  }
-
-  IGRAPH_CHECK(igraph_vit_create(graph, to, &vit));
-  IGRAPH_FINALLY(igraph_vit_destroy, &vit);
-
-  if (IGRAPH_VIT_SIZE(vit) != igraph_vector_ptr_size(res)) {
-    IGRAPH_ERROR("Size of `res' and `to' should match", IGRAPH_EINVAL);
-  }
-
-  IGRAPH_CHECK(igraph_indheap_init(&Q, no_of_nodes));
-  IGRAPH_FINALLY(igraph_indheap_destroy, &Q);
-  IGRAPH_CHECK(igraph_lazy_adjedgelist_init(graph, &adjlist, mode));
-  IGRAPH_FINALLY(igraph_lazy_adjedgelist_destroy, &adjlist);
-
-  IGRAPH_VECTOR_INIT_FINALLY(&dists, no_of_nodes);
-  //mjreed added
-  for(i=0;i<no_of_nodes;i++) VECTOR(dists)[i]=-1.0;
-  // end mjreed added
-
-  parents = igraph_Calloc(no_of_nodes, long int);
-  if (parents == 0) IGRAPH_ERROR("Can't calculate shortest paths", IGRAPH_ENOMEM);
-  IGRAPH_FINALLY(igraph_free, parents);
-  is_target = igraph_Calloc(no_of_nodes, igraph_bool_t);
-  if (is_target == 0) IGRAPH_ERROR("Can't calculate shortest paths", IGRAPH_ENOMEM);
-  IGRAPH_FINALLY(igraph_free, is_target);
-
-  /* Mark the vertices we need to reach */
-  to_reach=IGRAPH_VIT_SIZE(vit);
-  for (IGRAPH_VIT_RESET(vit); !IGRAPH_VIT_END(vit); IGRAPH_VIT_NEXT(vit)) {
-    if (!is_target[ (long int) IGRAPH_VIT_GET(vit) ]) {
-      is_target[ (long int) IGRAPH_VIT_GET(vit) ] = 1;
-    } else {
-      to_reach--;		/* this node was given multiple times */
-    }
-  }
-
-  //VECTOR(dists)[(long int)from] = 1.0;	/* zero distance */
-  VECTOR(dists)[(long int)from] = 0.0;	/* zero distance */
-  if (is_target[(long int)from]) to_reach--;
-  parents[(long int)from] = from+1;
-  igraph_indheap_push_with_index(&Q, from, 0);
-    
-  while (!igraph_indheap_empty(&Q) && to_reach > 0) {
-    long int nlen, minnei=igraph_indheap_max_index(&Q);
-    igraph_real_t mindist=-igraph_indheap_delete_max(&Q);
-    igraph_vector_t *neis;
-
-    IGRAPH_ALLOW_INTERRUPTION();
-
-    if (is_target[minnei]) {
-      is_target[minnei] = 0;
-      to_reach--;
-    }
-
-    /* Now check all neighbors of 'minnei' for a shorter path */
-    neis=igraph_lazy_adjedgelist_get(&adjlist, minnei);
-    nlen=igraph_vector_size(neis);
-    for (i=0; i<nlen; i++) {
-      long int edge=VECTOR(*neis)[i];
-      long int to=IGRAPH_OTHER(graph, edge, minnei);
-      igraph_real_t altdist=mindist + VECTOR(*weights)[edge];
-      igraph_real_t curdist=VECTOR(dists)[to];
-      //if (curdist==0) {
-      if (curdist<0) {
-        /* This is the first non-infinite distance */
-        //VECTOR(dists)[to] = altdist+1.0;
-	VECTOR(dists)[to] = altdist;
-        parents[to] = minnei+1;
-        IGRAPH_CHECK(igraph_indheap_push_with_index(&Q, to, -altdist));
-	//} else if (altdist < curdist-1) {
-      } else if (altdist < curdist) {
-	/* This is a shorter path */
-        //VECTOR(dists)[to] = altdist+1.0;
-	VECTOR(dists)[to] = altdist;
-        parents[to] = minnei+1;
-        IGRAPH_CHECK(igraph_indheap_modify(&Q, to, -altdist));
-      }
-    }
-  } /* !igraph_indheap_empty(&Q) */
-
-  if (to_reach > 0) IGRAPH_WARNING("Couldn't reach some vertices");
-
-  /* Reconstruct the shortest paths based on vertex IDs */
-  for (IGRAPH_VIT_RESET(vit), i=0; !IGRAPH_VIT_END(vit); IGRAPH_VIT_NEXT(vit), i++) {
-    long int node=IGRAPH_VIT_GET(vit);
-    igraph_vector_t *vec=(igraph_vector_t*)VECTOR(*res)[i];
-    igraph_vector_clear(vec);
-
-    IGRAPH_ALLOW_INTERRUPTION();
-
-    if (parents[node]>0) {
-      long int size=0;
-      long int act=node;
-      while (parents[act] != act+1) {
-        size++;
-        act=parents[act]-1;
-      }
-      size++;
-      IGRAPH_CHECK(igraph_vector_resize(vec, size));
-      VECTOR(*vec)[--size]=node;
-      act=node;
-      while (parents[act] != act+1) {
-        VECTOR(*vec)[--size]=parents[act]-1;
-        act=parents[act]-1;
-      }
-    }
-
-  }
-  
-  igraph_lazy_adjedgelist_destroy(&adjlist);
-  igraph_indheap_destroy(&Q);
-  igraph_vector_destroy(&dists);
-  igraph_Free(is_target);
-  igraph_Free(parents);
-  igraph_vit_destroy(&vit);
-  IGRAPH_FINALLY_CLEAN(6);
-  
-  return 0;
-}
 
 SEXP rg_fleischer_max_concurrent_flow_c_igraph(SEXP num_verts_in,
 					       SEXP num_edges_in,
@@ -2951,16 +2789,18 @@ SEXP rg_fleischer_max_concurrent_flow_c_igraph(SEXP num_verts_in,
 					       SEXP Rpermutation,
 					       SEXP Rdeltaf
 					       ) {
+
   bool progress=false;
   bool updateflow=Rcpp::as<bool>(Rupdateflow);
   std::string title("");
-  if ( Rcpp::is<bool>(Rprogress) ) {
-    progress=asLogical(Rprogress);
-  } else if ( isString(Rprogress) ) {
+  if ( Rf_isLogical(Rprogress) ) {
+    progress=Rcpp::as<bool>(Rprogress);
+  } else if ( Rf_isString(Rprogress) ) {
     title = std::string(CHAR(STRING_ELT(Rprogress,0)));
     progress=true;
   }
   std::vector<long> vedges = Rcpp::as< std::vector<long> > (R_edges_in);
+  int m = vedges.size()/2;
   std::vector<rg_demandi>::iterator vi,ve;
     
 
@@ -2971,8 +2811,8 @@ SEXP rg_fleischer_max_concurrent_flow_c_igraph(SEXP num_verts_in,
   double* dem_in = REAL(demands_in);
   int* dem_sources_in = INTEGER(demands_sources_in);
   int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = asInteger(num_demands_in);
-  double deltaf = asReal(Rdeltaf);
+  int num_dem = Rcpp::as<int>(num_demands_in);
+  double deltaf = Rcpp::as<double>(Rdeltaf);
 
   std::vector<rg_demandi> demandsi(num_dem);
   for(int i=0 ; i<num_dem; i++) {
@@ -2982,86 +2822,50 @@ SEXP rg_fleischer_max_concurrent_flow_c_igraph(SEXP num_verts_in,
     demandsi[i].sink = dem_sinks_in[i];
   }
 
-  double e = asReal(Re);
-
-  // need to return:
-  // dual lengths
-  // demand[].flow
-  // demand[].[pathmap] key and values
-  igraph_rg_fleischer_max_concurrent_flow(vedges, capacities, demands,e,N);
+  double e = Rcpp::as<double>(Re);
+  long totalphases;
+  std::vector<double> lengths;
   
-    
-  // set up return expressions
-  SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = allocVector(REALSXP,m));
-  PROTECT(flowsxp = allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = allocVector(VECSXP,5));
-    
-  INTEGER(lenxp)[0] = num_dem_p_flows;
-  INTEGER(lenxp)[1] = totalphases;
-    
-  int* edges_in = INTEGER(R_edges_in);
-  for (int i = 0; i < m ; i++) {
-    REAL(duallenxp)[i] = (double)VECTOR(weights)[i];
-  }
-    
-  int i=0;
-  int j=0;
-  int k=0;
-  int l=0;
-  int n=0;
-  for(vi=demandsi.begin(); vi < demandsi.end(); vi++, i++) {
-    REAL(flowsxp)[i]= vi->flow;
-      
-    std::map<const std::vector<long>, double>::iterator pmi, pmend;
-    for(pmi=vi->path_flow_map.begin(); pmi != vi->path_flow_map.end(); pmi++) {
-      std::vector<long> path = pmi->first;
-      double val = pmi->second;
-      std::vector<long>::iterator vi, vend;
+  igraph_rg_fleischer_max_concurrent_flow(vedges, capacities, demandsi,
+					  lengths,e,N,totalphases);
+  
+  Rcpp::List retdemandsi;
+  for(int i=0 ; i<num_dem; i++) {
+    Rcpp::List demand;
+    demand.push_back(demandsi[i].demand,"demand");
+    demand.push_back(demandsi[i].flow,"flow");
+    demand.push_back(boost::lexical_cast<std::string>(demandsi[i].source+1),
+			     "source");
+    demand.push_back(boost::lexical_cast<std::string>(demandsi[i].sink+1)
+			     ,"sink");
+    Rcpp::List paths;
+    std::map< std::vector< long > ,double >::iterator mit;
+    for(mit=demandsi[i].path_flow_map.begin();
+	mit != demandsi[i].path_flow_map.end();
+	mit++) {
+      std::vector<long> path = mit->first;
       std::string spath;
-      std::string sdem = std::string(to_string<int>(i+1));
-      vi=path.begin();
-      spath.append(to_string<int>(*vi + 1));
-      vi++;
-      for(; vi != path.end(); vi++) {
-	spath.append("|");
-	spath.append(to_string<int>(*vi + 1));
+      std::vector<long>::iterator k=path.begin();
+      spath = boost::lexical_cast<std::string>( *k + 1);
+      k++;
+      for(;
+	  k != path.end();
+	  k++) {
+	spath += "|";
+	spath += boost::lexical_cast<std::string>( *k + 1);
       }
-      SEXP pathsxp, demsxp;
-      // create the demand string identifier
-      PROTECT(demsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,mkChar(sdem.c_str()));
-      // create the path string
-      PROTECT(pathsxp = allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,mkChar(spath.c_str()));
-      SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
-      SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
-      REAL(pmapvalxp)[n++] = val;
-      UNPROTECT(2);
+      paths.push_back(mit->second,spath.c_str());
     }
-      
+    demand.push_back(paths,"paths");
+    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
   }
-    
-    
-  SET_VECTOR_ELT(retlistxp,0,duallenxp);
-  SET_VECTOR_ELT(retlistxp,1,flowsxp);
-  SET_VECTOR_ELT(retlistxp,2,lenxp);
-  SET_VECTOR_ELT(retlistxp,3,pmapkeyxp);
-  SET_VECTOR_ELT(retlistxp,4,pmapvalxp);
-  UNPROTECT(7);
-    
-    
-  return(retlistxp);
+  
+  Rcpp::List retlist;
+  retlist.push_back(retdemandsi,"demands");
+  retlist.push_back(totalphases,"totalphases");
+  retlist.push_back(lengths,"lengths");
+  
+  return wrap(retlist);
 }
 
-
-
-
 __END_DECLS
-
-    /* Local Variables:     */
-    /* outline-regexp:"  ." */
-    /* End:                 */

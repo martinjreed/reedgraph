@@ -1,15 +1,10 @@
-// mjreed
-
-//#include <string>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
-//#include <algorithm>
 #include <Rmath.h>
 
 #include <R.h>
 
 #include "RBGL.hpp"
-//#include <Rinternals.h>
 #include "Rcpp.h"
 
 

@@ -32,6 +32,9 @@
 # define __END_DECLS /* empty */
 #endif
 
+double poor_drand48() {
+  return (double(rand()) / RAND_MAX);
+}
 
 
 void make_heap(std::vector< std::pair<double, std::vector<int> > >::iterator,
@@ -113,24 +116,6 @@ void rg_cversion() {
   Rprintf("Version 2.0");
 }
 
-
-class rg_demandi {
-public:
-  double flow;
-  long source;
-  long sink;
-  double demand;
-  std::map< std::vector< long > ,double > path_flow_map;
-};
-
-
-void igraph_rg_fleischer_max_concurrent_flow(std::vector<long> vedges,
-					     std::vector<double> capacities,
-					     std::vector<rg_demandi> &demands,
-					     std::vector<double> &lengths,
-					     double e,
-					     long N,
-					     long &totalphases);
 
 
 
@@ -2558,7 +2543,7 @@ SEXP rg_max_concurrent_flow_int_c
     if(using_new_path_gamma) {
       std::vector<int> newpath(numD);
       for(int j=0;j<numD;j++) {
-	if(drand48() > 0.85)
+	if(poor_drand48() > 0.85)
 	  newpath[j]=pathrecord[j];
 	else
 	  //newpath[j]=prevphasepathrecord[j];
@@ -2791,100 +2776,5 @@ SEXP rg_test_every_path_inner
 
 
 
-SEXP rg_fleischer_max_concurrent_flow_c_igraph(SEXP num_verts_in,
-					       SEXP num_edges_in,
-					       SEXP R_edges_in,
-					       SEXP R_weights_in,
-					       SEXP capacities_in,
-					       SEXP num_demands_in,
-					       SEXP demands_sources_in,
-					       SEXP demands_sinks_in,
-					       SEXP demands_in,
-					       SEXP Re,
-					       SEXP Rupdateflow,
-					       SEXP pb,
-					       SEXP env,
-					       SEXP Rprogress,
-					       SEXP Rpermutation,
-					       SEXP Rdeltaf
-					       ) {
-
-  bool progress=false;
-  bool updateflow=Rcpp::as<bool>(Rupdateflow);
-  std::string title("");
-  if ( Rf_isLogical(Rprogress) ) {
-    progress=Rcpp::as<bool>(Rprogress);
-  } else if ( Rf_isString(Rprogress) ) {
-    title = std::string(CHAR(STRING_ELT(Rprogress,0)));
-    progress=true;
-  }
-  std::vector<long> vedges = Rcpp::as< std::vector<long> > (R_edges_in);
-  int m = vedges.size()/2;
-  std::vector<rg_demandi>::iterator vi,ve;
-    
-
-    
-    
-  std::vector<double> capacities = Rcpp::as< std::vector<double> > (capacities_in);
-  int N = Rcpp::as<int>(num_verts_in);
-  double* dem_in = REAL(demands_in);
-  int* dem_sources_in = INTEGER(demands_sources_in);
-  int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = Rcpp::as<int>(num_demands_in);
-  double deltaf = Rcpp::as<double>(Rdeltaf);
-
-  std::vector<rg_demandi> demandsi(num_dem);
-  for(int i=0 ; i<num_dem; i++) {
-    demandsi[i].demand = dem_in[i];
-    demandsi[i].flow = 0;
-    demandsi[i].source = dem_sources_in[i];
-    demandsi[i].sink = dem_sinks_in[i];
-  }
-
-  double e = Rcpp::as<double>(Re);
-  long totalphases;
-  std::vector<double> lengths;
-  
-  igraph_rg_fleischer_max_concurrent_flow(vedges, capacities, demandsi,
-					  lengths,e,N,totalphases);
-  
-  Rcpp::List retdemandsi;
-  for(int i=0 ; i<num_dem; i++) {
-    Rcpp::List demand;
-    demand.push_back(demandsi[i].demand,"demand");
-    demand.push_back(demandsi[i].flow,"flow");
-    demand.push_back(boost::lexical_cast<std::string>(demandsi[i].source+1),
-			     "source");
-    demand.push_back(boost::lexical_cast<std::string>(demandsi[i].sink+1)
-			     ,"sink");
-    Rcpp::List paths;
-    std::map< std::vector< long > ,double >::iterator mit;
-    for(mit=demandsi[i].path_flow_map.begin();
-	mit != demandsi[i].path_flow_map.end();
-	mit++) {
-      std::vector<long> path = mit->first;
-      std::string spath;
-      std::vector<long>::iterator k=path.begin();
-      spath = boost::lexical_cast<std::string>( *k + 1);
-      k++;
-      for(;
-	  k != path.end();
-	  k++) {
-	spath += "|";
-	spath += boost::lexical_cast<std::string>( *k + 1);
-      }
-      paths.push_back(mit->second,spath.c_str());
-    }
-    demand.push_back(paths,"paths");
-    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
-  }
-  
-  Rcpp::List retlist;
-  retlist.push_back(retdemandsi,"demands");
-  retlist.push_back(totalphases,"totalphases");
-  retlist.push_back(lengths,"lengths");
-  
-  return wrap(retlist);
-}
 
 __END_DECLS

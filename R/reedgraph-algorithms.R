@@ -581,11 +581,13 @@ rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccod
 ### output: list:
 ###              graph: with weight set to edge flow
 ###              demands: each with met demand and paths
-
-
-rg.fleischer.max.concurrent.flow.c.old <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="random",deltaf=1.0) {
-
-
+rg.fleischer.max.concurrent.flow.c.new <- function(g,
+                                                   demands,
+                                                   e=0.1,
+                                                   updateflow=TRUE,
+                                                   progress=FALSE,
+                                                   permutation="random",
+                                                   deltaf=1.0) {
   em <- edgeMatrix(g)
   nN <- nodes(g)
   nv <- length(nN)
@@ -598,108 +600,54 @@ rg.fleischer.max.concurrent.flow.c.old <- function(g,demands,e=0.1,updateflow=TR
   demands.sources <- as.integer(lapply(demands,"[[","source"))
   demands.sinks <- as.integer(lapply(demands,"[[","sink"))
   demands.demand <- lapply(demands,"[[","demand")
-
-  doubreq <- 2/e * log(ne/(1-e),base=(1+e))
-
-  if(progress != FALSE) {
-    pb <- txtProgressBar(title = "progress bar", min = 0,
-                        max = doubreq, style=3)
-  } else {
-    pb <- NULL
-  }
-  if(is.numeric(permutation))
-    permutation <- permutation - 1
-  else if(permutation == "fixed")
-    permutation <- 0: (length(demands) -1)
-  else if(permutation == "random")
-    permutation <- -1
-  else if(permutation == "lowest")
-    permutation <- -2
-  
-  #permutation <- seq(0,length(demands)-1)
-
-  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c_igraph",
-  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_boost",
-  #retlist <- .Call("rg_fleischer_max_concurrent_flow_c",
-  #retlist <- .Call("rg_karakostas_max_concurrent_flow_c",
-                   as.integer(nv),
-                   as.integer(ne),
-                   as.integer(em-1),
-                   as.double(eW),
+  retlist <- .Call("rg_fleischer_max_concurrent_flow_c_new",
                    as.double(cap),
-                   as.integer(length(demands)),
+                   as.integer(em-1),
+                   as.integer(nv),
                    as.integer(demands.sources -1 ),
                    as.integer(demands.sinks -1),
                    as.double(demands.demand),
-                   as.double(e),
-                   as.logical(updateflow),
-                   pb,
-                   environment(),
-                   progress,
-                   permutation,
-                   deltaf
+                   as.double(e)
                  )
-  
-  
-  demflow <- retlist[[2]]
-  for(c in names(demands)) {
-    demands[[c]]$flow <- demflow[[as.integer(c)]]
-    demands[[c]]$paths <- list()
-  }
 
+  demands <- retlist$demands
 
-  if(retlist[[3]][[1]] > 0) {
-    retdemkey <- retlist[[4]]
-    retdemval <- retlist[[5]]
-    i <- 1
-    for(n in seq(1:retlist[[3]][[1]])) {
-      demand <- retdemkey[[i]]
-      i <- i+1
-      path <- retdemkey[[i]]
-      i <- i+1
-      demands[[demand]]$paths[[path]] <- retdemval[[n]]
-    }
-  }
-  delta <- deltaf * (ne / (1-e)) ^ (-1/e) 
+  delta <- (ne / (1-e)) ^ (-1/e) 
 
   scalef <- 1 / log(1/delta,base=(1+e))
-
   
   gdual <- g
 
   fromlist <- edgeMatrix(g)[1,]
   tolist <- edgeMatrix(g)[2,]
 
-  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist[[1]]
+  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist$lengths
 
   demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
   gflow <- rg.max.concurrent.flow.graph(gdual,demands)
 
   beta <- calcBeta(demands,gdual)
   
-  lambda=NULL
-  if(updateflow) {
-    lambda <- calcLambda(demands)
-    foundratio <- beta / lambda
-    ratiobound <- (1-e)^-3
-  } else {
-    foundratio <- NULL
-    ratiobound <- NULL
-  }
+  lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
   
-
-  if( progress != FALSE) {
-    close(pb)
-  }
-
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
-                   phases=retlist[[3]][[2]],e=e,
+                   phases=retlist$totalphases,e=e,
                    ratio=foundratio,
                    bound=ratiobound
                    )
 }
 
-rg.fleischer.max.concurrent.flow.c <- function(g,demands,e=0.1,updateflow=TRUE,progress=FALSE,permutation="random",deltaf=1.0) {
+
+
+rg.fleischer.max.concurrent.flow.c <- function(g,
+                                               demands,
+                                               e=0.1,
+                                               updateflow=TRUE,
+                                               progress=FALSE,
+                                               permutation="random",
+                                               deltaf=1.0) {
 
 
   em <- edgeMatrix(g)

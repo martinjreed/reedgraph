@@ -22,6 +22,7 @@
 #include <Rcpp.h>
 #include <Rinternals.h>
 #include "rgalgorithms.h"
+#include "max-flow.hpp"
 #undef __BEGIN_DECLS
 #undef __END_DECLS
 #ifdef __cplusplus
@@ -69,8 +70,6 @@ int updateExplicitFlow(rg_demand& demand,
   f = sink;
   p = penult[f];
 
-  std::pair<rgVertex,rgVertex> key;
-  key = std::pair<rgVertex,rgVertex>(p,f);
   path.push_back(f);
   path.push_back(p);
 	
@@ -213,11 +212,6 @@ SEXP rg_num_edge_disjoint_paths_c(SEXP num_verts_in,
   return(count);
 }
 
-
-
-
-
-
 double calcBeta(std::vector<rg_demand>& demands,
 		Graph_rg& graph) {
   using namespace boost;
@@ -235,262 +229,6 @@ double calcBeta(std::vector<rg_demand>& demands,
   }
   beta = calcD(graph) /alpha;
   return beta;
-}
-SEXP rg_fleischer_max_concurrent_flow_c_keep(SEXP num_verts_in,
-					     SEXP num_edges_in,
-					     SEXP R_edges_in,
-					     SEXP R_weights_in,
-					     SEXP capacities_in,
-					     SEXP num_demands_in,
-					     SEXP demands_sources_in,
-					     SEXP demands_sinks_in,
-					     SEXP demands_in,
-					     SEXP Re,
-					     SEXP Rupdateflow,
-					     SEXP pb,
-					     SEXP env,
-					     SEXP Rprogress
-					     ) {
-  using namespace boost;
-  bool progress=false;
-  bool updateflow=Rf_asLogical(Rupdateflow);
-  std::string title("");
-  if ( Rf_isLogical(Rprogress) ) {
-    progress=Rf_asLogical(Rprogress);
-  } else if ( Rf_isString(Rprogress) ) {
-    title = std::string(CHAR(STRING_ELT(Rprogress,0)));
-    progress=true;
-  }
-  Graph_rg gdual(num_verts_in, num_edges_in, R_edges_in, R_weights_in,capacities_in);
-	
-  double* dem_in = REAL(demands_in);
-  int* dem_sources_in = INTEGER(demands_sources_in);
-  int* dem_sinks_in = INTEGER(demands_sinks_in);
-  int num_dem = Rf_asInteger(num_demands_in);
-  std::vector<rg_demand> demands(num_dem);
-  for(int i=0 ; i<num_dem; i++) {
-    demands[i].demand = dem_in[i];
-    demands[i].flow = 0;
-    demands[i].source = vertex(dem_sources_in[i],gdual);
-    demands[i].sink = vertex(dem_sinks_in[i],gdual);
-  }
-  int N = num_vertices(gdual);
-  int m = num_edges(gdual);
-  double e = Rf_asReal(Re);
-  int num_dem_ed_flows =0;
-  int num_dem_p_flows =0;
-  double delta = pow(double(m) / (1.0 - e),-1.0/e);
-
-  graph_traits < Graph_rg >::edge_iterator ei, eend;
-
-  for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
-    int s = source(*ei,gdual);
-    int t = target(*ei,gdual);
-    std::pair<Edge, bool> e = edge(vertex(s,gdual),
-				   vertex(t,gdual),gdual);
-    double c = get(edge_capacity,gdual,e.first);
-    put(edge_weight,gdual,e.first,delta/c);
-  }
-	
-
-  double D;
-  D=calcD(gdual);
-  int doubreq =  2*int(ceil(1.0/e * log(m/(1-e))/log(1+e)));
-	
-  // assuming doubreq is about the maximum number of phases
-  // then we want to only update the progress bar every 1%
-  int updatepb = int(ceil(doubreq / 100.0));
-  int phases =0;
-  int totalphases =0;
-  
-  std::vector<Vertex> penult(N);
-  std::vector<double> dist(N);
-  std::vector<rg_demand>::iterator vi,ve;
-
-  SEXP cmdsxp, cmdexpr, ansxp = R_NilValue;
-  ParseStatus status;
-
-  PROTECT(cmdsxp = Rf_allocVector(STRSXP,1));
-	
-  char cmd[256];
-  //ansxp = eval(cmdexpr,env);
-
-  double a = pow(2.0,-130);
-  double b =1;
-  double c = a +b;
-
-  std::vector<int> demand_index(num_dem);
-  for(int i=0; i<num_dem; i++) {
-    demand_index[i]=i;
-  }
-
-  // phases
-  while(D < 1.0) {
-    if(phases > doubreq) {
-      //Rprintf("DOubling %d %d\n",doubreq,totalphases);
-      for(vi=demands.begin(); vi < demands.end(); vi++) {
-	vi->demand = vi->demand * 2;
-      }
-		
-      phases = 0;
-    }
-
-    // if progress only update about every 1%
-    if(progress && totalphases % updatepb ==0 ) {
-      // calls R to update progress bar
-      sprintf(cmd,"setTxtProgressBar(pb,%d)",totalphases);
-      SET_STRING_ELT(cmdsxp,0,Rf_mkChar(cmd));
-      cmdexpr = PROTECT(R_ParseVector(cmdsxp, -1, &status, R_NilValue));
-      for(int i = 0; i < Rf_length(cmdexpr); i++)
-	ansxp = Rf_eval(VECTOR_ELT(cmdexpr, i), env);
-      UNPROTECT(1);
-    }	  
-		
-    // steps
-    random_shuffle(demand_index.begin(),demand_index.end());
-	  
-    for(int j=0; j<num_dem;j++) {
-      int i= demand_index[j];
-      rg_demand demand=demands[i];
-      rgVertex source = demand.source;
-      rgVertex sink = demand.sink;
-      rgVertex f,p;
-
-      //iterations
-      while( D < 1.0 && demand.demand > 0) {
-	dijkstra_shortest_paths(gdual, source,
-				predecessor_map(&penult[0]).distance_map(&dist[0]));
-
-	// go through the path (backwards) and find minimum capacity
-	f = sink;
-	p = penult[f];
-	std::pair<Edge, bool> ed = edge(p,f,gdual);
-
-	double mincap=get(edge_capacity,gdual,ed.first);
-	f = p;
-	p = penult[p];
-	double w =get(edge_weight,gdual,ed.first);
-		  
-	while(f != source) {
-	  ed = edge(p,f,gdual);
-	  double cap =get(edge_capacity,gdual,ed.first);
-	  double w =get(edge_weight,gdual,ed.first);
-	  mincap = cap < mincap? cap : mincap;
-	  f = p;
-	  p = penult[p];
-	}
-
-	// now we have the maximum flow we can push through this
-	// step, and update demand (will add flow later)
-	mincap = demand.demand < mincap ? demand.demand : mincap;
-	demand.demand = demand.demand - mincap;
-
-	// update each edge length = length (1 + (e*mincap) / capacity_e)
-	// again go though the path backwards
-	f = sink;
-	p = penult[f];
-	ed = edge(p,f,gdual);
-		  
-	double c=get(edge_capacity,gdual,ed.first);
-	w =get(edge_weight,gdual,ed.first);
-	w = w * (1 + (e * mincap) / c);
-	put(edge_weight,gdual,ed.first,w);
-
-	f = p;
-	p = penult[p];
-				 
-	while(f != source) {
-	  ed = edge(p,f,gdual);
-	  c =get(edge_capacity,gdual,ed.first);
-	  w =get(edge_weight,gdual,ed.first);
-	  w = w * (1 + (e * mincap) / c);
-	  put(edge_weight,gdual,ed.first,w);
-	  f = p;
-	  p = penult[p];
-	}
-	if(updateflow) {
-	  num_dem_p_flows += updateExplicitFlow(demands[i],penult,mincap);
-	}
-	demands[i].flow += mincap;
-
-	D=calcD(gdual);
-      }
-    }
-    phases++;
-    totalphases++;
-  }
-	
-
-  // need to return:
-  // dual lengths
-  // demand[].flow
-  // demand[].[pathmap] key and values
-
-  // set up return expressions
-  SEXP duallenxp, flowsxp, lenxp, pmapkeyxp, pmapvalxp, retlistxp;
-  PROTECT(duallenxp = Rf_allocVector(REALSXP,m));
-  PROTECT(flowsxp = Rf_allocVector(REALSXP,num_dem));
-  PROTECT(lenxp = Rf_allocVector(INTSXP,3));
-  PROTECT(pmapkeyxp = Rf_allocVector(VECSXP,num_dem_p_flows * 2));
-  PROTECT(pmapvalxp = Rf_allocVector(REALSXP,num_dem_p_flows));
-  PROTECT(retlistxp = Rf_allocVector(VECSXP,5));
-
-  INTEGER(lenxp)[0] = num_dem_p_flows;
-  INTEGER(lenxp)[1] = totalphases;
-
-  int* edges_in = INTEGER(R_edges_in);
-  for (int i = 0;
-       i < m ; 
-       i++, edges_in += 2) {
-    std::pair<rgEdge, bool> ed = edge(vertex(*edges_in,gdual),vertex(*(edges_in+1),gdual), gdual);
-    REAL(duallenxp)[i] = get(edge_weight,gdual,ed.first);
-  }
-
-  int i=0;
-  int j=0;
-  int k=0;
-  int l=0;
-  int n=0;
-  for(vi=demands.begin(); vi < demands.end(); vi++, i++) {
-    REAL(flowsxp)[i]= vi->flow;
-	  
-    std::map<const std::vector<rgVertex>, double>::iterator pmi, pmend;
-    for(pmi=vi->path_flow_map.begin(); pmi != vi->path_flow_map.end(); pmi++) {
-      std::vector<rgVertex> path = pmi->first;
-      double val = pmi->second;
-      std::vector<rgVertex>::reverse_iterator vi, vend;
-      std::string spath;
-      std::string sdem = std::string(to_string<int>(i+1));
-      vi=path.rbegin();
-      spath.append(to_string<int>(*vi + 1));
-      vi++;
-      for(; vi != path.rend(); vi++) {
-	spath.append("|");
-	spath.append(to_string<int>(*vi + 1));
-      }
-      SEXP pathsxp, demsxp;
-      // create the demand string identifier
-      PROTECT(demsxp = Rf_allocVector(STRSXP,1));
-      SET_STRING_ELT(demsxp,0,Rf_mkChar(sdem.c_str()));
-      // create the path string
-      PROTECT(pathsxp = Rf_allocVector(STRSXP,1));
-      SET_STRING_ELT(pathsxp,0,Rf_mkChar(spath.c_str()));
-      SET_VECTOR_ELT(pmapkeyxp,l++, demsxp);
-      SET_VECTOR_ELT(pmapkeyxp,l++, pathsxp);
-      REAL(pmapvalxp)[n++] = val;
-      UNPROTECT(2);
-    }
-		
-  }
-	
-  SET_VECTOR_ELT(retlistxp,0,duallenxp);
-  SET_VECTOR_ELT(retlistxp,1,flowsxp);
-  SET_VECTOR_ELT(retlistxp,2,lenxp);
-  SET_VECTOR_ELT(retlistxp,3,pmapkeyxp);
-  SET_VECTOR_ELT(retlistxp,4,pmapvalxp);
-  UNPROTECT(7);
-  return(retlistxp);
-  
 }
 
 std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
@@ -968,6 +706,8 @@ double cost_on_path(Graph_rg gdual,int path[],int len,bool print,double rel) {
   Rprintf(" = %lg\n",cost/rel);
   return cost;
 }
+
+
 
 SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
 					SEXP num_edges_in,
@@ -1745,7 +1485,93 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   
 }
 
+SEXP rg_fleischer_max_concurrent_flow_c_new(SEXP Rcapacities,
+					    SEXP Redges,
+					    SEXP Rnum_vertices,
+					    SEXP Rdemand_sources,
+					    SEXP Rdemand_sinks,
+					    SEXP Rdemands_demand,
+					    SEXP Re
+					    ) {
+  std::vector<double> capacities = Rcpp::as< std::vector<double> > (Rcapacities);
+  std::vector<int> edges = Rcpp::as< std::vector<int> > (Redges);
+  long m = edges.size()/2;
+  int num_vertices = Rcpp::as<int> (Rnum_vertices);
+  std::vector<int> demand_sources = Rcpp::as< std::vector<int> > (Rdemand_sources);
+  std::vector<int> demand_sinks = Rcpp::as< std::vector<int> > (Rdemand_sinks);
+  std::vector<double> demand_demands = Rcpp::as< std::vector<double> > (Rdemands_demand);
+  int num_demands = demand_sources.size();
+  double e = Rcpp::as<double> (Re); 
+  Graph_mf g(num_vertices,edges,capacities,demand_sources,demand_sinks);
+
+  std::vector<mf_demand> demands(num_demands);
+  for(int i=0 ; i<num_demands; i++) {
+    demands[i].demand = demand_demands[i];
+    demands[i].flow = 0;
+    demands[i].source = vertex(demand_sources[i],g);
+    demands[i].sink = vertex(demand_sinks[i],g);
+  }
+
+  g.max_concurrent_flow(demands,e);
   
+    
+  // setup return to R
+  std::vector<double> lengths(m);
+
+  for (int i = 0, j=0;
+       i < m ; 
+       i++, j+= 2) {
+    std::pair<Edge, bool> ed = boost::edge(vertex(edges[j],g.gdual),vertex(edges[j+1],g.gdual), g.gdual);
+    if(ed.second==true) {
+      lengths[i] = boost::get(boost::edge_weight,g.gdual,ed.first);
+    } else {
+      Rprintf("SHOULD NEVER GET HERE: no such edge %ld->%ld\n",edges[j],edges[j+1]);
+    }
+  }
+
+
+  Rcpp::List retdemandsi;
+  for(int i=0 ; i<num_demands; i++) {
+    Rcpp::List demand;
+    demand.push_back(demands[i].demand,"demand");
+    demand.push_back(demands[i].flow,"flow");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].source+1),
+			     "source");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].sink+1)
+			     ,"sink");
+    Rcpp::List paths;
+    std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+    for(pmi=demands[i].path_flow_map.begin();
+	pmi != demands[i].path_flow_map.end(); pmi++) {
+      std::list<Vertex> path = pmi->first;
+      double val = pmi->second;
+      std::list<Vertex>::iterator vi, vend;
+      std::string spath;
+      std::string sdem = std::string(to_string<int>(i+1));
+      vi=path.begin();
+      spath.append(to_string<int>(*vi + 1));
+      vi++;
+      for(; vi != path.end(); vi++) {
+	spath.append("|");
+	spath.append(to_string<int>(*vi + 1));
+      }
+      paths.push_back(pmi->second,spath.c_str());
+    }
+    demand.push_back(paths,"paths");
+    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
+
+  }
+  
+
+  
+  Rcpp::List retlist;
+  retlist.push_back(retdemandsi,"demands");
+  retlist.push_back(g.totalphases,"totalphases");
+  retlist.push_back(lengths,"lengths");
+  
+  return wrap(retlist);
+
+}
   
 
 SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,

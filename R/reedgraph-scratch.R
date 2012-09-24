@@ -241,7 +241,7 @@ rg.path.lengths <- function(demands) {
   return(lengths)
 }
 
-
+## This was the routine used for the icc2012 paper
 rg.run.tests <- function(min=8,max=20,averages=10,e=0.05,target=0.1,dirname=NULL) {
   vecN <- c()
   vecL <- c()

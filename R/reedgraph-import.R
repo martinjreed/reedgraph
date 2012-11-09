@@ -21,15 +21,16 @@ require("igraph",quietly=TRUE)
 ### read gml files such as internet-toplogy-zoo
 ### input
 ### path directory to search for files, (default is harcoded to a place on my system)
-### returns list of names as keys and for each a graph in igraph format
+### Make sure path is not relative to "~" in Mac as it fails!
+### returns list of names as keys each element is a graph in igraph format
 rg.import.multi.gml <- function(path="/Users/mjreed/main/R/reedgraph/topologies/internet-toplogy-zoo/") {
   files <- list.files(path,pattern="\\.gml",recursive=TRUE)
 
   graphs <- list()
   for(file in files) {
-    cat("importing ",file,"\n")
+    ##cat("importing ",file,"\n")
     graph.name <- strsplit(file,"\\.")[[1]][1]
-    cat("created ",graph.name,"\n")
+    ##cat("created ",graph.name,"\n")
     g <- read.graph(paste(path,"/",file,sep=""),format="gml")
     graphs[[graph.name]] <- g
   }
@@ -38,7 +39,6 @@ rg.import.multi.gml <- function(path="/Users/mjreed/main/R/reedgraph/topologies/
 
 ### read rocketfuel files
 ### result igraph
-#lapply(match, function(x) cbind(x, attr(x, "match.length")))[[1]]
 rg.import.rocketfuel <- function(file) {
   myfile <- file(file, "r")
   lines <- readLines(myfile)

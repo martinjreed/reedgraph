@@ -1,4 +1,5 @@
 ###
+
 ###    Copyright (C) 2012 Martin J Reed              martin@reednet.org.uk
 ###    University of Essex, Colchester, UK
 ###
@@ -34,31 +35,6 @@ rg.show.paths <- function(demands,numlist=NULL) {
   cat("total number of paths is ",num,"\n")
 }
 
-setClass("rgGraph",
-         representation(layout="matrix"
-                        ),
-         contains="graphNEL")
-
-setGeneric("layout",
-           function(this,...)
-           standardGeneric("layout"))
-setGeneric("layout<-",
-           function(this,...)
-           standardGeneric("layout<-"))
-
-
-setMethod("layout",
-          signature("rgGraph"),
-          function(this) {
-            return (this@layout)
-          })
-
-setReplaceMethod("layout",
-          signature("rgGraph"),
-          function(this,value) {
-            this@layout <- value
-            this
-          })
 
 createLayout <- function(graph) {
     gi <- igraph.from.graphNEL(graph)
@@ -121,7 +97,8 @@ plot.graphNEL <- function(x,y,width=800,height=800,
     print("Error in rgGraph@plot: graph is not class graphNEL")
     return(NULL)
   }
-  
+  nodelabels=nodes(graph)
+  graph <- rg.relabel(graph)
   if ( is.null(layout) ) {
     gi <- igraph.from.graphNEL(graph)
     layout <- layout.fruchterman.reingold(gi)
@@ -270,7 +247,7 @@ plot.graphNEL <- function(x,y,width=800,height=800,
     ## substitute is necessary to replace the value of i each time a new inner
     ## function is created. Then this has to be actually evaluated!
 
-    nodelab <- tkcreate(tkcan,"text",xpos,ypos,text=as.character(i))
+    nodelab <- tkcreate(tkcan,"text",xpos,ypos,text=nodelabels[i])
     nodelabbk <- tkcreate(tkcan,"rectangle",tkbbox(tkcan,nodelab),fill="white")
     tkitemlower(tkcan,nodelabbk,nodelab)
 

@@ -1485,6 +1485,95 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   
 }
 
+
+SEXP rg_fleischer_max_concurrent_flow_c_prescaled(SEXP Rcapacities,
+						  SEXP Redges,
+						  SEXP Rnum_vertices,
+						  SEXP Rdemand_sources,
+						  SEXP Rdemand_sinks,
+						  SEXP Rdemands_demand,
+						  SEXP Re
+						  ) {
+  std::vector<double> capacities = Rcpp::as< std::vector<double> > (Rcapacities);
+  std::vector<int> edges = Rcpp::as< std::vector<int> > (Redges);
+  long m = edges.size()/2;
+  int num_vertices = Rcpp::as<int> (Rnum_vertices);
+  std::vector<int> demand_sources = Rcpp::as< std::vector<int> > (Rdemand_sources);
+  std::vector<int> demand_sinks = Rcpp::as< std::vector<int> > (Rdemand_sinks);
+  std::vector<double> demand_demands = Rcpp::as< std::vector<double> > (Rdemands_demand);
+  int num_demands = demand_sources.size();
+  double e = Rcpp::as<double> (Re); 
+  Graph_mf g(num_vertices,edges,capacities);
+
+  std::vector<mf_demand> demands(num_demands);
+  for(int i=0 ; i<num_demands; i++) {
+    demands[i].demand = demand_demands[i];
+    demands[i].flow = 0;
+    demands[i].source = vertex(demand_sources[i],g);
+    demands[i].sink = vertex(demand_sinks[i],g);
+  }
+
+  g.max_concurrent_flow_prescaled(demands,e);
+  
+    
+  // setup return to R
+  std::vector<double> lengths(m);
+
+  for (int i = 0, j=0;
+       i < m ; 
+       i++, j+= 2) {
+    std::pair<Edge, bool> ed = boost::edge(vertex(edges[j],g.gdual),vertex(edges[j+1],g.gdual), g.gdual);
+    if(ed.second==true) {
+      lengths[i] = boost::get(boost::edge_weight,g.gdual,ed.first);
+    } else {
+      Rprintf("SHOULD NEVER GET HERE: no such edge %ld->%ld\n",edges[j],edges[j+1]);
+    }
+  }
+
+
+  Rcpp::List retdemandsi;
+  for(int i=0 ; i<num_demands; i++) {
+    Rcpp::List demand;
+    demand.push_back(demands[i].demand,"demand");
+    demand.push_back(demands[i].flow,"flow");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].source+1),
+			     "source");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].sink+1)
+			     ,"sink");
+    Rcpp::List paths;
+    std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+    for(pmi=demands[i].path_flow_map.begin();
+	pmi != demands[i].path_flow_map.end(); pmi++) {
+      std::list<Vertex> path = pmi->first;
+      double val = pmi->second;
+      std::list<Vertex>::iterator vi, vend;
+      std::string spath;
+      std::string sdem = std::string(to_string<int>(i+1));
+      vi=path.begin();
+      spath.append(to_string<int>(*vi + 1));
+      vi++;
+      for(; vi != path.end(); vi++) {
+	spath.append("|");
+	spath.append(to_string<int>(*vi + 1));
+      }
+      paths.push_back(pmi->second,spath.c_str());
+    }
+    demand.push_back(paths,"paths");
+    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
+
+  }
+  
+
+  
+  Rcpp::List retlist;
+  retlist.push_back(retdemandsi,"demands");
+  retlist.push_back(g.totalphases,"totalphases");
+  retlist.push_back(lengths,"lengths");
+  
+  return wrap(retlist);
+
+}
+
 SEXP rg_fleischer_max_concurrent_flow_c_new(SEXP Rcapacities,
 					    SEXP Redges,
 					    SEXP Rnum_vertices,
@@ -1502,7 +1591,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_new(SEXP Rcapacities,
   std::vector<double> demand_demands = Rcpp::as< std::vector<double> > (Rdemands_demand);
   int num_demands = demand_sources.size();
   double e = Rcpp::as<double> (Re); 
-  Graph_mf g(num_vertices,edges,capacities,demand_sources,demand_sinks);
+  Graph_mf g(num_vertices,edges,capacities);
 
   std::vector<mf_demand> demands(num_demands);
   for(int i=0 ; i<num_demands; i++) {
@@ -1514,6 +1603,95 @@ SEXP rg_fleischer_max_concurrent_flow_c_new(SEXP Rcapacities,
 
   g.max_concurrent_flow(demands,e);
   
+    
+  // setup return to R
+  std::vector<double> lengths(m);
+
+  for (int i = 0, j=0;
+       i < m ; 
+       i++, j+= 2) {
+    std::pair<Edge, bool> ed = boost::edge(vertex(edges[j],g.gdual),vertex(edges[j+1],g.gdual), g.gdual);
+    if(ed.second==true) {
+      lengths[i] = boost::get(boost::edge_weight,g.gdual,ed.first);
+    } else {
+      Rprintf("SHOULD NEVER GET HERE: no such edge %ld->%ld\n",edges[j],edges[j+1]);
+    }
+  }
+
+
+  Rcpp::List retdemandsi;
+  for(int i=0 ; i<num_demands; i++) {
+    Rcpp::List demand;
+    demand.push_back(demands[i].demand,"demand");
+    demand.push_back(demands[i].flow,"flow");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].source+1),
+			     "source");
+    demand.push_back(boost::lexical_cast<std::string>(demands[i].sink+1)
+			     ,"sink");
+    Rcpp::List paths;
+    std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+    for(pmi=demands[i].path_flow_map.begin();
+	pmi != demands[i].path_flow_map.end(); pmi++) {
+      std::list<Vertex> path = pmi->first;
+      double val = pmi->second;
+      std::list<Vertex>::iterator vi, vend;
+      std::string spath;
+      std::string sdem = std::string(to_string<int>(i+1));
+      vi=path.begin();
+      spath.append(to_string<int>(*vi + 1));
+      vi++;
+      for(; vi != path.end(); vi++) {
+	spath.append("|");
+	spath.append(to_string<int>(*vi + 1));
+      }
+      paths.push_back(pmi->second,spath.c_str());
+    }
+    demand.push_back(paths,"paths");
+    retdemandsi.push_back(demand,boost::lexical_cast<std::string> (i+1));
+
+  }
+  
+
+  
+  Rcpp::List retlist;
+  retlist.push_back(retdemandsi,"demands");
+  retlist.push_back(g.totalphases,"totalphases");
+  retlist.push_back(lengths,"lengths");
+  
+  return wrap(retlist);
+
+}
+
+
+SEXP rg_min_congestion_flow(SEXP Rcapacities,
+			    SEXP Redges,
+			    SEXP Rnum_vertices,
+			    SEXP Rdemand_sources,
+			    SEXP Rdemand_sinks,
+			    SEXP Rdemands_demand,
+			    SEXP Re
+			    ) {
+  std::vector<double> capacities = Rcpp::as< std::vector<double> > (Rcapacities);
+  std::vector<int> edges = Rcpp::as< std::vector<int> > (Redges);
+  long m = edges.size()/2;
+  int num_vertices = Rcpp::as<int> (Rnum_vertices);
+  std::vector<int> demand_sources = Rcpp::as< std::vector<int> > (Rdemand_sources);
+  std::vector<int> demand_sinks = Rcpp::as< std::vector<int> > (Rdemand_sinks);
+  std::vector<double> demand_demands = Rcpp::as< std::vector<double> > (Rdemands_demand);
+  int num_demands = demand_sources.size();
+  double e = Rcpp::as<double> (Re); 
+  Graph_mf g(num_vertices,edges,capacities);
+
+  std::vector<mf_demand> demands(num_demands);
+  for(int i=0 ; i<num_demands; i++) {
+    demands[i].demand = demand_demands[i];
+    demands[i].flow = 0;
+    demands[i].source = vertex(demand_sources[i],g);
+    demands[i].sink = vertex(demand_sinks[i],g);
+  }
+
+  g.min_congestion_flow(demands,e);
+  Rprintf("min_congestion_flow gamma = %lg",g.gamma);
     
   // setup return to R
   std::vector<double> lengths(m);
@@ -2066,7 +2244,7 @@ SEXP rg_max_concurrent_flow_int_c
   double bestgamma= -DBL_MAX;
 
   std::vector<int> demand_index(numD);
-  if(permutation.size()==numD) {
+  if(permutation.size()==numD && permutation[0] >= 0) {
     demand_index = permutation;
   } else {
     for(int i=0; i<numD; i++) {
@@ -2179,7 +2357,7 @@ SEXP rg_max_concurrent_flow_int_c
       }
     }
 	  
-    if(permutation[0] == -1) {
+    if(permutation[0] == -1 && numD > 1) {
       random_shuffle(demand_index.begin(),demand_index.end());
     }
 
@@ -2215,6 +2393,7 @@ SEXP rg_max_concurrent_flow_int_c
 	  vcapacity,
 	  weights,
 	  vdemands[i]);*/
+	//problem here i = -1
 	std::pair<long, double> ppair = 
 	  findshortestpathcost(paths[i],
 			       vlengths);

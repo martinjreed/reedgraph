@@ -219,6 +219,25 @@ rg.analyse.tests <- function(res) {
   return(var)
 }
 
+rg.test.integer <- function(emin,emax,estep,N=10,wavelengths=8,e=0.1) {
+  g <- rg.generate.random.graph(N,2,25)
+  M <- length(edgeMatrix(g))/2
+  g <- rg.set.capacity(g,1.0)
+
+  ga <- rg.augment.graph.for.wavelengths(g,wavelengths)
+  ga <- rg.set.weight(ga,0.0)
+  results <- data.frame()
+  for(i in seq(emin,emax,estep) ) {
+    demands <- rg.gen.demands(g,i) 
+    sp.results <- rg.sp.max.concurrent.flow(ga,demands)
+    flow.results <- rg.minimum.congestion.flow(ga,demands,e=e,progress=TRUE)
+    int.results <- rg.max.concurrent.flow.int.c(ga,flow.results$demands,e=e,progress=TRUE)
+    results <- rbind(results,
+                     data.frame(E=i,SP=sp.results$gamma,Flow=flow.results$gamma,Int=int.results$bestgamma))
+  }
+  return(results)
+}
+
 ### Returns a graph with number of flows in each edge
 rg.count.edge.flows <- function(g,demands) {
   for(i in 1:length(demands)) {
@@ -227,7 +246,6 @@ rg.count.edge.flows <- function(g,demands) {
       demands[[i]]$paths[[j]] <- 1.0
     }
   }
-  gcount <- rg.max.concurrent.flow.graph(g,demands)
   return(gcount)
 }
 
@@ -820,7 +838,11 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
 ###              "lowest" done in lowest cost (lowest dual path) order
 ###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="fixed",deltaf=1.0) {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="random",deltaf=1.0) {
+
+  nodelabels <- nodes(g)
+  demands <- rg.demands.relable.to.indices(demands,nodelabels)
+  g <- rg.relabel(g)
 
   ## note this is not the dual value
   calcD <- function() {
@@ -923,7 +945,6 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
   } else {
     pb <- NULL
   }
-
   retlist <- .Call("rg_max_concurrent_flow_int_c",
                    demandpaths,
                    vdemands,
@@ -1008,9 +1029,17 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
     intdemands[[i]]$flow <- demands[[i]]$demand
     intdemands[[i]]$paths <- list()
     intdemands[[i]]$paths[[names(demands[[i]]$paths[bestpaths[as.integer(i)]])]] <-
-      demands[[i]]$demand
-
+      demands[[i]]$demand      
   }
+
+
+
+
+  ##put back the demands labels instead of indices
+  demands <- rg.demands.relable.from.indices(demands,nodelabels)
+  intdemands <- rg.demands.relable.from.indices(intdemands,nodelabels)
+  nodes(gflow) <- nodelabels
+  nodes(gdual) <- nodelabels
 
   gflowint <- rg.max.concurrent.flow.graph(gdual,intdemands)
   
@@ -1025,7 +1054,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
                  betavals=retlist$betavals,
                  lambdavals=retlist$lambdavals,
                  intdemands=intdemands,
-                 gflowint <- gflowint)
+                 gflowint=gflowint)
 
   
   return(retval)
@@ -2253,4 +2282,27 @@ rg.fleischer.max.concurrent.flow.with.int.c <- function(g,demands,e=0.1,updatefl
 
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
                    phases=retlist[[3]][[2]],e=e)
+}
+
+### Calculates the number of edge disjoint paths
+### between every pair of nodes
+### Returns a matrix where element [u,v] is the
+### number of paths between u and v where
+### 0 means disconnected (or to itself)
+### 1 for one path etc
+### NOTE this is an R stub calling C++ code
+### NOTE THIS IS INCORRECT!
+rg.num.edge.disjoint.paths.c <- function(g) {
+  em <- edgeMatrix(g)
+  nN <- nodes(g)
+  nv <- length(nN)
+
+  ne <- ncol(em)
+  eW <- unlist(edgeWeights(g))
+
+  count <- .Call("rg_num_edge_disjoint_paths_c",
+     as.integer(nv), as.integer(ne),
+     as.integer(em-1), as.double(eW))
+  count <- matrix(count,nrow=nv,ncol=nv)
+  count
 }

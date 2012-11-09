@@ -1,11 +1,13 @@
 Package: reedgraph
 Type: Package
-Title: Graph routines for Maximum Commodity Flow and other graph routines
-Version: 1.0
-Date: 2012-08-09
+Title: Graph routines for Maximum Commodity Flow and other graph
+        routines
+Version: 1.1
+Date: 2012-11-06
 Author: Martin J. Reed
 Maintainer: Martin J. Reed <martin@reednet.org.uk>
 Description: Graph routines for Maximum Commodity Flow and other miscellaneous graph routines
 License: GPL (>= 2)
-Depends: Rcpp (>= 0.9.13), RBGL, graph, igraph, genalg, bitops, tcltk
+Depends: Rcpp, RBGL, graph, igraph, genalg, bitops, tcltk
 LinkingTo: Rcpp
+

@@ -18,9 +18,66 @@
 
 require("bitops")
 
-BLOOMLENGTH <- 64
+BLOOMLENGTH <- 256
 BLOOMCHUNKS <- ceiling(BLOOMLENGTH/32)
 ALLZEROS <- rep(0,BLOOMCHUNKS)
+
+##
+rg.random.fid <-function(n,k=1) {
+  fid <- ALLZEROS
+  for(i in 1:n) {
+    fid <- bitOr(fid,rg.createLid(k))
+    #print(rg.bloom.to.binary(fid))
+  }
+  return(fid)
+}
+
+rg.test.fp <- function(n,t,k=1) {
+  count <- 0
+  fid <- rg.random.fid(n,k)
+  #print("fid=")
+  #print(rg.bloom.to.binary(fid))
+  #print("lids")
+  for(i in 1:t) {
+    lid <- rg.createLid(k)
+    #print(rg.bloom.to.binary(lid))
+    if(rg.test.member(fid,lid))
+      count <- count +1
+  }
+  return(count)
+}
+
+rg.test.fp.averages <-function(n,t,k=1,a) {
+  sum <- 0
+  for(i in 1:a) {
+    sum <- sum + rg.test.fp(n,t,k)
+  }
+  return(sum/(a*t))
+}
+
+### example
+### rg.test.fp.averages(10,20,10,100)
+rg.test.fp.range.k <- function(n,t,k=c(1),a) {
+  FP <- c()
+  for(kay in k) {
+    FP <- c(FP,rg.test.fp.averages(n,t,kay,a))
+  }
+  results <- data.frame(k=k,FP=FP)
+  return(results)
+    
+}
+
+### Function to print binary pattern.
+### ONLY WRITTEN AS A DEMO, ONLY WORKS FOR BLOOMLENGTH <=32
+rg.bloom.to.binary <- function(val) {
+  result <- c()
+  for(i in 1:BLOOMLENGTH) {
+    mybit <- bitAnd(val,1)
+    result <- c(mybit,result)
+    val <- bitShiftR(val,1)
+  }
+  return(result)
+}
 
 ### combinations possible with
 ### k hash functions, m length
@@ -123,6 +180,7 @@ rg.create.fid <- function(graph,path) {
 ### tpcount - count of true positives
 ### tncount - count of true negatives
 ###   ther are no false negatives for LIPSIN
+#### WARNING may be broken, igraph stores the lids as seperate objects not concatonated list
 rg.bloom.false.postive.on.path <- function(graph,path,fid) {
   if(!is.simple(graph)) {
     cat("Error in rg.bloom.false.postive, not a simple graph\n")
@@ -137,7 +195,7 @@ rg.bloom.false.postive.on.path <- function(graph,path,fid) {
     n <- neighbors(graph,current)
     tests <- n[n!=nxt & n!=previous]
     for(t in tests) {
-      if(rg.test.member(fid,E(graph)[ current %--% t ]$lid)) {
+      if(rg.test.member(fid,E(graph)[ current %--% t ]$lid[[1]])) {
         fpcount <- fpcount + 1
         ##cat("false positive\n")
       }
@@ -154,6 +212,7 @@ rg.bloom.false.postive.on.path <- function(graph,path,fid) {
   return(count)
 }
 
+### NOT FINISHED
 rg.test.false.postitives.all.paths <- function(graph) {
   
   rate <- c(0)

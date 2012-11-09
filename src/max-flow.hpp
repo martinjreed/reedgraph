@@ -1,3 +1,23 @@
+/*
+    Copyright (C) 2012 Martin J Reed              martin@reednet.org.uk
+    University of Essex, Colchester, UK
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+#ifndef MAX_FLOW_HPP
+#define MAX_FLOW_HPP
 #include <vector>
 #include <list>
 #include <utility>
@@ -35,9 +55,7 @@ public:
 
   inline Graph_mf(int num_vertices,
 		  const std::vector< int > &edges,
-		  const std::vector<double> &capacities,
-		  const std::vector<int> demand_sources,
-		  const std::vector<int> demand_sinks)
+		  const std::vector<double> &capacities)
     : NetGraph(num_vertices)
   {
     int NE = edges.size()/2;
@@ -50,10 +68,28 @@ public:
   } 
   void max_concurrent_flow(std::vector<mf_demand> &demands,
 		      double e=0.1);
+  void sp_concurrent_flow(std::vector<mf_demand> &demands);
+
+  void max_concurrent_flow_prescaled(std::vector<mf_demand> &demands,
+				     double e);
+  void min_congestion_flow(std::vector<mf_demand> &demands,
+			   double e);
+
+
+
   NetGraph gdual;
+  NetGraph gflow;
   long totalphases;
+  double gamma;
+  double lambda;
+  double beta;
 private:
   double calcD();
+  void rescale_demands(std::vector<mf_demand> &demands,double scale);
+  void rescale_demands_flows(std::vector<mf_demand> &demands,double scale);
+  double calcBeta(std::vector<mf_demand> &demands);
+  double calcLambda(std::vector<mf_demand> &demands);
+  double assign_gflow(std::vector<mf_demand> &demands);
 };
 
 typedef boost::graph_traits < NetGraph >::edge_descriptor Edge;
@@ -65,5 +101,7 @@ class mf_demand {
   Vertex source;
   Vertex sink;
   double demand;
+  // these flows will be stored in reverse order (from sink to source)
   std::map<const std::list<Vertex>,double> path_flow_map;
 };
+#endif

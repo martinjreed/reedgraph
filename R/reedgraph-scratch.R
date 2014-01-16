@@ -1,4 +1,4 @@
-###
+
 ###    Copyright (C) 2012 Martin J Reed              martin@reednet.org.uk
 ###    University of Essex, Colchester, UK
 ###
@@ -219,23 +219,206 @@ rg.analyse.tests <- function(res) {
   return(var)
 }
 
-rg.test.integer <- function(emin,emax,estep,N=10,wavelengths=8,e=0.1) {
+rg.test.integer.plot <- function(res) {
+  ## convert to long format
+  resl <- melt(res,measure.vars=c("MF","FF"),variable.name="Algorithm")
+  ## summarise
+  ress <- summarySE(resl,"value",groupvars=c("Algorithm","Load"))
+  ## plot!
+  pd <- position_dodge(0.5) # offest so errorbars do not obscure
+  ggplot(ress, aes(x=Load,y=value, colour=Algorithm)) + geom_errorbar(aes(ymin=value-ci, ymax=value+ci), width=1, position=pd) + geom_line(position=pd) + geom_point(position=pd, size=3, shape=21, fill="white") + ylab("Blocking Probability") + expand_limits(y=0)
+
+  ggplot(res, aes(x=factor(Load))) + geom_boxplot(aes(y=FF),position=pd,width=0.25) + geom_boxplot(aes(y=MF),position=pd,width=0.25)
+  
+}
+
+### NOT COMPLETE YET, the augmentation works but  it crashes in 
+rg.test.integer <- function(emin,emax,estep,repeats,N=10,wavelengths=4,e=0.1) {
   g <- rg.generate.random.graph(N,2,25)
   M <- length(edgeMatrix(g))/2
   g <- rg.set.capacity(g,1.0)
 
-  ga <- rg.augment.graph.for.wavelengths(g,wavelengths)
+  au <- rg.augment.graph.for.wavelengths(g,wavelengths)
+  ga <- au$ga
+  linkgroupmap <- au$linkgroupmap
+  
   ga <- rg.set.weight(ga,0.0)
-  results <- data.frame()
+  sp.blocking <- c()
+  flow.blocking <- c()
+  flowint.blocking <- c()
+  ff.blocking <- c()
+  ff.gamma <- c()
+  int.gamma <- c()
+  int.mgamma <- c()
+  ff.mgamma <- c()
+  dcount <- c()
+  int.results <- list()
   for(i in seq(emin,emax,estep) ) {
-    demands <- rg.gen.demands(g,i) 
-    sp.results <- rg.sp.max.concurrent.flow(ga,demands)
-    flow.results <- rg.minimum.congestion.flow(ga,demands,e=e,progress=TRUE)
-    int.results <- rg.max.concurrent.flow.int.c(ga,flow.results$demands,e=e,progress=TRUE)
-    results <- rbind(results,
-                     data.frame(E=i,SP=sp.results$gamma,Flow=flow.results$gamma,Int=int.results$bestgamma))
+    for(j in 1:repeats) {
+      demands <- rg.gen.demands(g,i)
+                                        # adapt the demands to the new source/sink nodes.
+      for(j in names(demands) ){
+        demands[[j]]$source <- paste0(demands[[j]]$source,"s")
+        demands[[j]]$sink <- paste0(demands[[j]]$sink,"t")
+      }
+      numdems <- length(demands)
+      dcount <- c(dcount, numdems)
+      
+      
+      ff.results <- rg.sp.ff.max.concurrent.flow(ga,demands)
+      accepted <- rg.count.accepted.demands(
+        rg.check.blocked.demands(ff.results$demands,ga))
+      ff.blocking <- c(ff.blocking,(numdems-accepted)/numdems)
+      ff.gamma <- c(ff.gamma,ff.results$gamma)
+      weights <- as.double(edgeData(ff.results$gflow,attr="weight"))
+      capacities <- as.double(edgeData(ff.results$gflow,attr="capacity"))
+      gamma <- (capacities - weights) / capacities
+      mgamma <- mean(gamma)
+      ff.mgamma <- c(ff.mgamma,mgamma)
+      
+      int.results <- rg.max.concurrent.flow.int(ga,demands,e=e)
+      ch.demands <- rg.check.blocked.demands(int.results$demands,ga)
+      accepted <- rg.count.accepted.demands(ch.demands)
+      gtmp <- rg.max.concurrent.flow.graph(ga,ch.demands)
+      weights <- as.double(edgeData(gtmp,attr="weight"))
+      capacities <- as.double(edgeData(gtmp,attr="capacity"))
+      gamma <- (capacities - weights) / capacities
+      mgamma <- mean(gamma)
+      int.mgamma <- c(int.mgamma, mgamma)
+      flowint.blocking <- c(flowint.blocking,(numdems-accepted)/numdems)
+      int.gamma <- c(int.gamma, min(gamma))
+      
+      results <- data.frame("Load"=dcount,
+                            "FFB" = ff.blocking,
+                            "IntB"=flowint.blocking)
+      
+      print(results[nrow(results),],digits=4)
+    }
   }
+  results <- data.frame("Load"=dcount,
+                        "FF" = ff.blocking,
+                        "MF"=flowint.blocking)
   return(results)
+}
+
+
+
+
+# Summarizes data.
+## Gives count, mean, standard deviation, standard error of the mean,
+##   and confidence interval (default 95%).  data: a data frame.
+##   measurevar: the name of a column that contains the variable to be
+##   summariezed groupvars: a vector containing names of columns that
+##   contain grouping variables na.rm: a boolean that indicates
+##   whether to ignore NA's conf.interval: the percent range of the
+##   confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    require(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This is does the summary; it's not easy to understand...
+    datac <- ddply(data, groupvars, .drop=.drop,
+                   .fun= function(xx, col, na.rm) {
+                           c( N    = length2(xx[,col], na.rm=na.rm),
+                              mean = mean   (xx[,col], na.rm=na.rm),
+                              sd   = sd     (xx[,col], na.rm=na.rm)
+                              )
+                          },
+                    measurevar,
+                    na.rm
+             )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean"=measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+
+rg.check.blocked.demands <- function # Checks demands in order to lower flow if blocked
+### The results from a max-flow (min-congestion) algorithm may assign
+### more traffic than is actually possible. This function will test
+### each demand (and path in demand) in turn and only allocate the flow that is possible
+### thus it is possible to see which demands are blocked by comparing flows against demands
+### Note that trying the demands in order is not the optimum. It should be randomised
+### rather trying it in order. Another possibility is ordering the demands/paths in
+### order of length, shortest first. This way more demands are likely to be accepted.
+(demands, ##<< demand list in standard format with paths
+  g       ##<< graphNEL object with capacity attribute on edges
+ ) {
+  
+  g <- rg.set.all.graph.edge.weights(g)
+  for(nd in names(demands)) {
+    d <- demands[[nd]]
+    ##reassign the flow to the actual allocated
+    flow <- 0
+    for(p in names(d$paths)) {
+      #cat(nd,":",p,"=",d$paths[[p]],"\n")
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- pv[1:length(pv)-1]
+      tolist <- pv[2:length(pv)]
+      
+      weights <- as.double(edgeData(g,from=fromlist,
+                                    to=tolist,att="weight"))
+      capacities <- as.double(edgeData(g,from=fromlist,
+                                       to=tolist,att="capacity"))
+
+      minfree <- min(capacities-weights)
+
+      free <- (capacities-weights)
+      ## only for debugging
+      ##minind <- which(free == minfree)
+      ##for(m in minind) {
+      ##  cat("Most constrained ",fromlist[m],"->",tolist[m],
+      ##      weights[m],capacities[m]," ")
+      ##}
+      ## end only for debugging
+      
+      if (minfree < d$paths[[p]]) {
+        ##cat("blocked")
+        demands[[nd]]$paths[[p]] <- minfree
+        flow <- flow + minfree
+      } else {
+        flow <- flow + d$paths[[p]]
+      }
+      ##cat("\n")
+      weights <- weights + demands[[nd]]$paths[[p]]
+      edgeData(g,from=fromlist,
+               to=tolist,
+               att="weight") <- weights
+      
+    }
+    demands[[nd]]$flow <- flow
+    
+  }
+  demands
+  ### Demands with only the accepted traffic flow up to the limit of the graph capacities
+  ### other demands will have their flow set to the maximum allowable.
+}
+
+rg.count.accepted.demands <- function # Count the number of accepted demands
+### Note that due to numerical accuracy comparing flow == demand
+### is potentially risk. This actually checks if flow >= demand - 1e-03 to
+### allow for rounding errors. This limit can be set
+(demands,     ##<< demands to check
+ limit=1e-03  ##<< tolerance on equality of flow == demand to allow for rounding errors
+ ) {
+  accepted <- sapply(demands,function(i) {i$flow >= i$demand - limit})
+  return(length(accepted[accepted==TRUE]))
+  ### number of accepted demands
 }
 
 ### Returns a graph with number of flows in each edge
@@ -486,7 +669,7 @@ rg.test.int.versus.nonint.flow <- function(N=8,L=NULL,target=0.0,e=0.1,g=NULL) {
   flow.results$runtime <- runtime
   gcount <- rg.count.edge.flows(g,flow.results$demands)
   flow.results$max.mpls <- max(as.double(edgeData(gcount,att="weight")))
-  flow.results$max.bf <- max(as.double(lapply(edges(g),length)))
+  flow.results$max.bf <- max(as.double(lapply(graph::edges(g),length)))
   
   int.results <- rg.max.concurrent.flow.int.c(g,flow.results$demands,e=e,progress=TRUE)
 
@@ -573,7 +756,7 @@ rg.generate.random.lambda.graph <- function(g,n=10,mindeg=3,maxdeg=7,grid=c(0),l
                     paste("A",n,l,sep="."),
                     ag,
                     c(0))
-      for(u in edges(g)[[n]] ) {
+      for(u in graph::edges(g)[[n]] ) {
         if( u == n) next
         
         ag <- addEdge(paste("A",n,l,sep="."),
@@ -593,7 +776,7 @@ rg.generate.random.lambda.graph <- function(g,n=10,mindeg=3,maxdeg=7,grid=c(0),l
                     ag,
                     c(0))
       
-      for(u in edges(g)[[t]] ) {
+      for(u in graph::edges(g)[[t]] ) {
         if( u == t) next
         ## s.t to t.access
         
@@ -615,9 +798,8 @@ rg.generate.random.lambda.graph <- function(g,n=10,mindeg=3,maxdeg=7,grid=c(0),l
   return(graph)
 }
 
+
 rg.sp.lambda.max.concurrent.flow <- function(g,demands) {
-
-
   for(c in names(demands)) {
     demands[[c]]$flow <- 0
   }
@@ -679,7 +861,7 @@ rg.dfs <- function(g) {
 rg.dfs.visit <- function(g,u,data) {
   data$color[as.integer(u)] <- 1
   print(data$color[as.integer(u)])
-  for (v in edges(g,u)[[1]]) {
+  for (v in graph::edges(g,u)[[1]]) {
     cat("testing edge:",v,":\n")
     if(data$color[as.integer(v)] == 0 ) {
       data$pred[as.integer(v)] <- as.integer(u)
@@ -838,12 +1020,39 @@ rg.try.single.demands <- function(g,demands,e=0.1,progress=FALSE,permutation="fi
 ###              "lowest" done in lowest cost (lowest dual path) order
 ###
 
-rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updateflow=TRUE,progress=FALSE,scenario=NULL,permutation="random",deltaf=1.0) {
+rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,
+                                         updateflow=TRUE,progress=FALSE,
+                                         scenario=NULL,permutation="random",deltaf=1.0,
+                                         linkgroupmap=NULL) {
 
+  ## This is a bit of a mess. RBGL only understands indexes for nodes
+  ## so all the names need to be mapped to indices. This is for nodes, edges
+  ## and the linkgroup map. They will be remapped at the end.
+  if(!is.null(linkgroupmap)) {
+    link2name <- names(edgeData(g))
+    
+    linkgroup2name <- unique(as.character(linkgroupmap))
+    
+    link2linkgroup <- rep(NA,length(link2name))
+    linkgroupcap <- rep(0.0,length(linkgroup2name))
+    for(n in names(linkgroupmap)) {
+      i <- linkgroupmap[[n]]
+      linkgroup <- which(linkgroup2name == i)
+      edgepair <- strsplit(n,"\\|")[[1]]
+      
+      linkgroupcap[linkgroup] <- linkgroupcap[linkgroup] +
+        as.double(edgeData(g,from=edgepair[[1]],to=edgepair[[2]],attr="capacity"))
+    link2linkgroup[which(link2name == n)] <-
+      linkgroup
+    }
+    link2linkgroup[is.na(link2linkgroup)] <- 0
+  }
   nodelabels <- nodes(g)
   demands <- rg.demands.relable.to.indices(demands,nodelabels)
   g <- rg.relabel(g)
 
+  ## OK all the relabeling is done, phew
+  
   ## note this is not the dual value
   calcD <- function() {
     sum(vcapacity*vlength)
@@ -956,7 +1165,9 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,updatefl
                    bestgamma,
                    environment(),
                    permutation,
-                   deltaf
+                   deltaf,
+                   link2linkgroup-1,
+                   linkgroupcap
                    );
   
   if( progress != FALSE) {

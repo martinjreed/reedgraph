@@ -21,6 +21,8 @@
 #include <float.h>
 #include <boost/graph/copy.hpp>
 using namespace boost;
+#include <R.h>
+#include <Rinternals.h>
 
 inline double Graph_mf::calcD() {
   using namespace boost;
@@ -29,6 +31,9 @@ inline double Graph_mf::calcD() {
   for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
     double l = get(edge_weight,gdual,*ei);
     double c = get(edge_capacity,gdual,*ei);
+    int s = source(*ei,gdual);
+    int t = target(*ei,gdual);
+    //Rprintf("%ld -> %ld, %lg, %lg\n",s,t,l,c);
     sum += l*c;
   }
   return sum;
@@ -37,19 +42,23 @@ inline double Graph_mf::calcD() {
 double Graph_mf::assign_gflow(std::vector<mf_demand> &demands) {
   graph_traits < NetGraph >::edge_iterator ei, eend;
   for(tie(ei,eend) = edges(gflow); ei != eend; ei++) {
+    int s = source(*ei,gflow);
+    int t = target(*ei,gflow);
+    //Rprintf("%ld -> %ld\n",s,t);
     put(edge_weight,gflow,*ei,0.0);
   }
   std::vector<mf_demand>::iterator di;
 
   for(di=demands.begin(); di != demands.end(); di++) {
     std::map<const std::list<Vertex>,double>::iterator mi;
+    //Rprintf("(*di).path_flow_map.size()=%ld\n",(*di).path_flow_map.size());
     for(mi=(*di).path_flow_map.begin() ; mi != (*di).path_flow_map.end(); mi++) {
       std::list<Vertex>::const_iterator lh=(mi->first).begin();
       std::list<Vertex>::const_iterator lt=(mi->first).begin();
       lh++;
       for(;lh != mi->first.end(); lh++, lt++) {
-	// remember flow paths are stored in reverse order
-	std::pair<Edge, bool> ed = edge(*lh,*lt,gflow);
+	//Rprintf("%ld -> %ld\n",*lt,*lh);
+	std::pair<Edge, bool> ed = edge(*lt,*lh,gflow);
 	double w =get(edge_weight,gflow,ed.first);
 	put(edge_weight,gflow,ed.first,w+mi->second);
       }
@@ -119,8 +128,6 @@ void Graph_mf:: sp_concurrent_flow(std::vector<mf_demand> &demands) {
     // calculated shortest path
     dijkstra_shortest_paths(gdual, source,
 			    predecessor_map(&penult[0]).distance_map(&dist[0]));
-    // record the path (in reverse as its easier from penult)
-    // and add to the weight (flow) in gflow
     std::list<Vertex> path;
 
     f = sink;
@@ -381,5 +388,242 @@ void Graph_mf::  max_concurrent_flow(std::vector<mf_demand> &demands,
   lambda = calcLambda(demands);
   beta = calcBeta(demands);
   assign_gflow(demands);
+  
+}
+
+
+void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
+					 std::vector<mf_demand> &best_demands,
+					 double e) {
+
+  std::vector<mf_demand>::iterator di;
+  for(di=demands.begin(); di != demands.end(); di++) {
+    di->flow = 0;
+    di->path_flow_map.erase(di->path_flow_map.begin(),di->path_flow_map.end());
+  }
+  assigned = 0;
+  int num_dem = demands.size();
+  
+
+
+  gflow.clear();
+  boost::copy_graph((NetGraph)*this,gflow);
+  gdual.clear();
+  boost::copy_graph((NetGraph)*this,gdual);
+  for(int i=0 ; i<num_dem; i++) {
+    demands[i].flow = 0;
+  }
+  int N = num_vertices(*this);
+  int m = num_edges(*this);
+  number_flows = 0;
+  double delta = pow(double(m) / (1.0 - e),-1.0/e);
+
+  graph_traits < NetGraph >::edge_iterator ei, eend;
+
+  for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
+    int s = source(*ei,gdual);
+    int t = target(*ei,gdual);
+    std::pair<Edge, bool> e = edge(vertex(s,gdual),
+				   vertex(t,gdual),gdual);
+    double c = get(edge_capacity,gdual,e.first);
+    put(edge_weight,gdual,e.first,delta/c);
+  }
+	
+
+  double D;
+  D=calcD();
+	
+  // assuming doubreq is about the maximum number of phases
+  // then we want to only update the progress bar every 1%
+  //int doubreq =  2*int(ceil(1.0/e * log(m/(1-e))/log(1+e)));
+  //int updatepb = int(ceil(doubreq / 100.0));
+  int phases =0;
+  totalphases =0;
+  
+  std::vector<Vertex> penult(N);
+  std::vector<double> dist(N);
+  std::vector<mf_demand>::iterator vi,ve;
+
+
+  std::vector<int> demand_index(num_dem);
+  for(int i=0; i<num_dem; i++) {
+    demand_index[i]=i;
+  }
+
+  // phases
+  while(D < 1.0) {
+    //Rprintf("D=%lg\n",D);
+    // this doubling could be included but it needs "undoubling" for
+    // demands and flows at the end if prescaling is done this should
+    // not be necessary
+    /*
+    if(phases > doubreq) {
+      for(vi=demands.begin(); vi < demands.end(); vi++) {
+	vi->demand = vi->demand * 2;
+      }
+      phases = 0;
+      }*/
+    // steps
+    random_shuffle(demand_index.begin(),demand_index.end());
+    NetGraph glimit;
+    boost::copy_graph(gdual,glimit);
+    for(tie(ei,eend) = edges(glimit); ei != eend; ei++) {
+      put(edge_weight,glimit,*ei,0.0);	    
+    }
+
+
+    long count=0;
+    std::vector<mf_demand> int_demands(num_dem);
+    for(int j=0; j<num_dem;j++) {
+      int i= demand_index[j];
+      mf_demand demand=demands[i];
+      Vertex vsource = demand.source;
+      Vertex vsink = demand.sink;
+      Vertex f,p;
+      //Rprintf("Doing demand %d, %ld -> %ld\n",i,vsource,vsink);
+
+      //iterations
+      //while( D < 1.0 && demand.demand > 0) {
+	//Rprintf("demand.demand=%lg\n",demand.demand);
+	NetGraph gtmp;
+	boost::copy_graph(gdual,gtmp);
+	
+	for(tie(ei,eend) = edges(gtmp); ei != eend; ei++) {
+	  int s = source(*ei,gtmp);
+	  int t = target(*ei,gtmp);
+	  std::pair<Edge, bool> ed = edge(vertex(s,gtmp),
+					 vertex(t,gtmp),gtmp);
+	  double c = get(edge_capacity,gtmp,ed.first);
+	  std::pair<Edge, bool> et = edge(vertex(s,glimit),
+					  vertex(t,glimit),glimit);
+	  double w = get(edge_weight,glimit,et.first);
+	  //Rprintf("%ld->%ld edge weight=%lg, for cap %lg, dem %lg\n",s,t,w,c,demand.demand);
+	  if(c-w < demand.demand) {
+	    //Rprintf("%ld->%ld set to inf\n",s,t);
+	    put(edge_weight,gtmp,ed.first,DBL_MAX);	    
+	  }
+
+	}
+	
+	dijkstra_shortest_paths(gtmp, vsource,
+				predecessor_map(&penult[0]).distance_map(&dist[0]));
+	//Rprintf("Penult:\n");
+	for(int k=0;k<penult.size();k++) {
+	  //Rprintf("%ld,",penult[k]);
+	}
+	//Rprintf("\nDist:\n");
+	for(int k=0;k<dist.size();k++) {
+	  //Rprintf("%lg,",dist[k]);
+	}
+	//Rprintf("distance to sink=%lg\n",dist[vsink]);
+	if(dist[vsink] == DBL_MAX) {
+	  //Rprintf("infinite\n");
+	  continue;
+	  demand.demand = 0;
+	}
+	count++;
+	// go through the path (backwards) and find minimum capacity
+	f = vsink;
+	p = penult[f];
+	std::pair<Edge, bool> ed = edge(p,f,gtmp);
+	std::pair<Edge, bool> el = edge(p,f,glimit);
+
+	double mincap=get(edge_capacity,gdual,ed.first);
+	f = p;
+	p = penult[p];
+	double w =get(edge_weight,gdual,ed.first);
+		  
+	while(f != vsource) {
+	  ed = edge(p,f,gdual);
+	  double cap =get(edge_capacity,gdual,ed.first);
+	  mincap = cap < mincap? cap : mincap;
+	  f = p;
+	  p = penult[p];
+	}
+
+	// now we have the maximum flow we can push through this
+	// step, and update demand (will add flow later)
+	mincap = demand.demand < mincap ? demand.demand : mincap;
+	demand.demand = demand.demand - mincap;
+
+	// update each edge length = length (1 + (e*mincap) / capacity_e)
+	// again go though the path backwards
+	f = vsink;
+	p = penult[f];
+	ed = edge(p,f,gdual);
+	el = edge(p,f,glimit);
+
+	double c=get(edge_capacity,gdual,ed.first);
+	w =get(edge_weight,gdual,ed.first);
+	w = w * (1 + (e * mincap) / c);
+	put(edge_weight,gdual,ed.first,w);
+	double flow = get(edge_weight,glimit,el.first);
+	put(edge_weight,glimit,el.first,flow+mincap);
+
+
+	std::list<Vertex> path;
+	path.push_front(f);
+	path.push_front(p);
+
+	f = p;
+	p = penult[p];
+
+				 
+	while(f != vsource) {
+	  ed = edge(p,f,gdual);
+	  el = edge(p,f,glimit);
+	  c =get(edge_capacity,gdual,ed.first);
+	  w =get(edge_weight,gdual,ed.first);
+	  w = w * (1 + (e * mincap) / c);
+	  put(edge_weight,gdual,ed.first,w);
+	  flow = get(edge_weight,glimit,el.first);
+	  put(edge_weight,glimit,el.first,flow+mincap);
+	  path.push_front(p);
+	  f = p;
+	  p = penult[p];
+	}
+	
+	if (demands[i].path_flow_map.find(mmgpath) == demands[i].path_flow_map.end()) {
+	  demands[i].path_flow_map[path] = mincap;
+	  number_flows++;
+	} else {
+	  demands[i].path_flow_map[path] += mincap;
+	}
+	int_demands[i].path_flow_map[path] = mincap;
+	int_demands[i].flow = mincap;
+	demands[i].flow += mincap;
+	D=calcD();
+	//Rprintf("D=%lg\n",D);
+
+	//}
+
+
+    }
+    //D=1.0;
+    //Rprintf("Assigned %ld/%ld\n",count,num_dem);
+    
+    if(count > assigned) {
+      assigned = count;
+      for(int i=0 ; i<num_dem; i++) {
+	best_demands[i].flow = int_demands[i].flow;
+	best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+      }
+    } 
+
+    phases++;
+    totalphases++;
+  }
+  //Rprintf("Assigned %ld/%ld\n",assigned,num_dem);
+  for(int i=0 ; i<num_dem; i++) {
+    
+    //Rprintf("Demand %ld flow=%lg\n",i+1,best_demands[i].flow);
+
+  }
+
+  double scalef = 1.0 / (log(1.0/delta) / log(1+e) );
+  rescale_demands_flows(demands,scalef);
+  lambda = calcLambda(demands);
+  beta = calcBeta(demands);
+  assign_gflow(best_demands);
   
 }

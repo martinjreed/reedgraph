@@ -42,36 +42,6 @@ createLayout <- function(graph) {
     return(layout)
 }
 
-setMethod("show",
-          signature("rgGraph"),
-          function(object) {
-            cat("rgGraph containing:\n")
-            show(as(object,"graphNEL"))
-          })
-
-setMethod("plot",
-          signature(x="rgGraph"),
-          function(x,y,width=800,height=800,
-                   margin=0.1,edgeweights=NULL,layout=NULL,...) {
-            graph <- as(x,"graphNEL")
-            print(identical(attr(x@layout,"dim"),
-                           as.integer(c(length(nodes(x)),2))))
-            if ( identical(attr(x@layout,"dim"),
-                           as.integer(c(length(nodes(x)),2)))) {
-              layout <- x@layout
-            } else {
-              gi <- igraph.from.graphNEL(graph)
-              layout <- layout.fruchterman.reingold(gi)
-              x@layout <- layout
-              show(layout)
-              show(x@layout)
-            }
-            plot(graph,width=width,height=height,margin=0.1,
-                 edgeweights=edgeweights,layout=layout)
-          })
-
-
-
 
 rg.plot.gammas <- function(g,layout) {
   flows <- as.double(edgeData(g,attr="weight"))

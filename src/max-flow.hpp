@@ -68,6 +68,10 @@ public:
   } 
   void max_concurrent_flow(std::vector<mf_demand> &demands,
 		      double e=0.1);
+
+  void max_concurrent_flow_int(std::vector<mf_demand> &demands,
+			       std::vector<mf_demand> &best_demands,
+				 double e=0.1);
   void sp_concurrent_flow(std::vector<mf_demand> &demands);
 
   void max_concurrent_flow_prescaled(std::vector<mf_demand> &demands,
@@ -83,6 +87,7 @@ public:
   double gamma;
   double lambda;
   double beta;
+  long assigned;
 private:
   double calcD();
   void rescale_demands(std::vector<mf_demand> &demands,double scale);

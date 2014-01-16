@@ -22,19 +22,48 @@ require("RBGL",quietly=TRUE,warn.conflicts=FALSE)
 require("genalg",quietly=TRUE)
 require("inlinedocs")
 
-rg.newfunctest <- function() {
-  print("in rg.newfunctest 1")
+### NOTE THIS IS USING INLINEDOCS
+### EXAMPLE
+rg.inlinedocs.example <- function # Example function
+### Here is some maths in the longer description \eqn{n} 
+### which probably has more lines
+##references<< Abelson, Hal; Jerry Sussman, and Julie
+##Sussman. Structure and Interpretation of Computer
+##Programs. Cambridge: MIT Press, 1984.
+(n,    ##<< description of vairiables 
+ times
+### here is a different way: Number of Fermat tests to perform. More
+### tests are more likely to give accurate results.
+ ){
+  if(times==0)TRUE
+  ##seealso<< \code{\link{fermat.test}}
+  else if(fermat.test(n)) is.pseudoprime(n,times-1)
+  else FALSE
+### the return value logical TRUE if n is probably prime.
 }
 
-rg.update2package <- function(libname,pkgname) {
+### This is rather dangerous and discouraged as it erases any state in
+### the global environment that would mask objects from this
+### package. DO NOT include in version submitted to CRAN
+.onAttach <- function(libname, pkgname) {
+  nummasked <- length(intersect(ls(".GlobalEnv"),ls("package:reedgraph")))
+  if ( nummasked >0 ) {
+    packageStartupMessage(
+      paste("   WARNING ", nummasked, " objects from reedgraph\n",
+            "            have overwritten the same objects in .GlobalEnv\n"))
+  }
+  rm(list=intersect(ls(".GlobalEnv"),ls("package:reedgraph")),
+     pos=".GlobalEnv")
+}
+
+rg.update2package <- function # Update objects in .GlobalEnv
+### Update objects in .GlobalEnv to the latest in the package
+### Usefull if you have stale values in .Rdata files saved
+### in a previous workspace.
+() {
   print("Removing old definitions")
-  print(search())
-  ls("package:reedgraph")
-  print("RG::::::::::::test")
-  ls(".GlobalEnv")
-  rm(list=intersect(ls(".GlobalEnv"),ls("package:reedgraph")))
-  print("RG::::::::::::test")
-  
+  rm(list=intersect(ls(".GlobalEnv"),ls("package:reedgraph")),
+     pos=".GlobalEnv")
 }
 
 ### return all the edges as a list of lists(head,tail)
@@ -44,7 +73,7 @@ rg.update2package <- function(libname,pkgname) {
 rg.edgeL <- function(g) {
   ed <- list()
   for(i in nodes(g)) {
-    for(el in edges(g)[[i]]) {
+    for(el in graph::edges(g)[[i]]) {
       ed <- c(ed,list(c(i,el)))
     }
   }
@@ -393,7 +422,7 @@ rg.sp.max.concurrent.flow <- function # Compute the multicommodity flow with sho
 
   gamma <- min((c-f)/c)
     
-  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
+
     
   #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
 
@@ -413,12 +442,12 @@ rg.sp.max.concurrent.flow <- function # Compute the multicommodity flow with sho
 }
 
 ### Compute the multicommodity flow in a graph using naive shortest
-### path g graph of type graphNEL with the edge weight variable used
-### for the shortest path. If the capacity is reached it will set the
-### edge weight to infinity so that a fully booked edge is omitted next time
-### demands: a list each element is a list [source, sink, demand]
-### WARNING NOT WRITTEN YET
-rg.sp.pruned.max.concurrent.flow <- function(g,demands) {
+### path with first fit for g, graph of type graphNEL, with the edge
+### weight variable used for the shortest path. If the capacity is
+### reached it will set the edge weight to infinity so that a fully
+### booked edge is omitted next time demands: a list each element is a
+### list [source, sink, demand] WARNING NOT WRITTEN YET
+rg.sp.ff.max.concurrent.flow <- function(g,demands) {
   # convert demands node labels to the index
   nodelabels <- nodes(g)
   demands <- rg.demands.relable.to.indices(demands,nodelabels)
@@ -426,6 +455,7 @@ rg.sp.pruned.max.concurrent.flow <- function(g,demands) {
 
   for(c in names(demands)) {
     demands[[c]]$flow <- 0
+    demands[[c]]$paths <- list()
   }
   gsol <- g
   g.sp <- list()
@@ -433,35 +463,53 @@ rg.sp.pruned.max.concurrent.flow <- function(g,demands) {
   g <- rg.set.weight(g,1.0)
   gsol <- rg.set.all.graph.edge.weights(gsol)
   
-  ccount <- 1
-  for(i in demands) {
-    ## calculate dijkstra.sp if we do not have one for this vertex
-    if(is.null(g.sp[[i$source]]))
-      g.sp[[i$source]] <- dijkstra.sp(g,start=i$source)$penult
-    path <- extractPath(i$source,i$sink,g.sp[[i$source]])
+  edgesfrom <- as.character(
+    sapply(names(edgeData(g,attr="capacity")),function(x) strsplit(x,"\\|")[[1]])[1,])
+  edgesto <- as.character(
+    sapply(names(edgeData(g,attr="capacity")),function(x) strsplit(x,"\\|")[[1]])[2,])
+
+  for(d in names(demands)) {
+    i <- demands[[d]]
+    gtmp <- g
+    ## find edges in gsol that can not accept demand and set them to infinity
+    weights <- as.double(edgeData(gsol,att="weight"))
+    capacities <- as.double(edgeData(gsol,att="capacity"))
     
-    gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
-    demands[[ccount]] <- updateExplicitFlow(g,g.sp[[i$source]],i$demand,i)
-    demands[[ccount]]$flow <- demands[[ccount]]$flow +i$demand
-    ccount <- ccount + 1
-  }
-  
+    free <- (capacities-weights)
+
+    gtmpw <- as.double(edgeData(gtmp,att="weight"))
+    gtmpw[i$demand > free] <- Inf
+    edgeData(gtmp,from = edgesfrom, to = edgesto, attr="weight") <- gtmpw
+    dij <- dijkstra.sp(gtmp,start=i$source)
+    if(dij$distance[i$sink] < Inf) {
+      path <- extractPath(i$source,i$sink,dij$penult)
+      fromlist <- path[1:length(path)-1]
+      tolist <- path[2:length(path)]
+
+      weights <- as.double(edgeData(gsol,from=as.character(fromlist),
+                                    to=as.character(tolist),att="weight"))
+      capacities <- as.double(edgeData(gsol,from=as.character(fromlist),
+                                       to=as.character(tolist),att="capacity"))
+    
+      minfree <- min(capacities-weights)
+
+      free <- (capacities-weights)
+      gsol <- rg.addto.weight.on.path(gsol,path,i$demand)
+      demands[[d]] <- updateExplicitFlow(g,dij$penult,i$demand,i)
+      demands[[d]]$flow <- i$demand
+    }
+   } 
   f <- as.double(edgeData(gsol,attr="weight"))
   c <- as.double(edgeData(gsol,attr="capacity"))
   lambda <- min(c/f)
-
+  
   gamma <- min((c-f)/c)
-    
-  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,lambda)
-    
-  #gsol <- rg.max.concurrent.flow.graph(gsol,demands)
-
+  
+  
   ##put back the demands labels instead of indices
   nodes(gsol) <- nodelabels
   demands <- rg.demands.relable.from.indices(demands,nodelabels)
   retval <-  list(demands=demands,gflow=gsol,lambda=lambda,gamma=gamma)
-
-    
   return(retval)
 }
 
@@ -746,7 +794,6 @@ rg.fleischer.max.concurrent.flow.c <- function(g,
   delta <- (ne / (1-e)) ^ (-1/e) 
 
   scalef <- 1 / log(1/delta,base=(1+e))
-  cat("scalef.R=", scalef, "\n")
   gdual <- g
 
   fromlist <- edgeMatrix(g)[1,]
@@ -760,6 +807,73 @@ rg.fleischer.max.concurrent.flow.c <- function(g,
   beta <- calcBeta(demands,gdual)
   
   lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
+
+  ##put back the demands labels instead of indices
+  demands <- rg.demands.relable.from.indices(demands,nodelabels)
+  nodes(gflow) <- nodelabels
+  nodes(gdual) <- nodelabels
+
+  retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
+                   phases=retlist$totalphases,e=e,
+                   ratio=foundratio,
+                   bound=ratiobound
+                   )
+}
+
+rg.max.concurrent.flow.int <- function(g,
+                                       demands,
+                                       e=0.1,
+                                       updateflow=TRUE,
+                                       progress=FALSE,
+                                       permutation="random",
+                                       deltaf=1.0) {
+  
+  nodelabels <- nodes(g)
+  demands <- rg.demands.relable.to.indices(demands,nodelabels)
+  g <- rg.relabel(g)
+
+  em <- edgeMatrix(g)
+  nN <- nodes(g)
+  nv <- length(nN)
+  
+  ne <- ncol(em)
+  eW <- unlist(edgeWeights(g))
+
+  cap <- as.double(edgeData(g,attr="capacity"))
+
+  demands.sources <- as.integer(lapply(demands,"[[","source"))
+  demands.sinks <- as.integer(lapply(demands,"[[","sink"))
+  demands.demand <- lapply(demands,"[[","demand")
+  retlist <- .Call("max_concurrent_flow_int",
+                   as.double(cap),
+                   as.integer(em-1),
+                   as.integer(nv),
+                   as.integer(demands.sources -1 ),
+                   as.integer(demands.sinks -1),
+                   as.double(demands.demand),
+                   as.double(e)
+                 )
+
+  demands <- retlist$demands
+
+  delta <- (ne / (1-e)) ^ (-1/e) 
+
+  scalef <- 1 / log(1/delta,base=(1+e))
+  gdual <- g
+
+  fromlist <- edgeMatrix(g)[1,]
+  tolist <- edgeMatrix(g)[2,]
+
+  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist$lengths
+
+  #demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+
+  beta <- retlist$beta
+  
+  lambda <- retlist$lambda
   foundratio <- beta / lambda
   ratiobound <- (1-e)^-3
 
@@ -869,6 +983,76 @@ rg.minimum.congestion.flow.c <- function(g,
   demands.sinks <- as.integer(lapply(demands,"[[","sink"))
   demands.demand <- lapply(demands,"[[","demand")
   retlist <- .Call("rg_min_congestion_flow",
+                   as.double(cap),
+                   as.integer(em-1),
+                   as.integer(nv),
+                   as.integer(demands.sources -1 ),
+                   as.integer(demands.sinks -1),
+                   as.double(demands.demand),
+                   as.double(e)
+                 )
+
+  demands <- retlist$demands
+
+  delta <- (ne / (1-e)) ^ (-1/e) 
+
+  scalef <- 1 / log(1/delta,base=(1+e))
+  
+  gdual <- g
+
+  fromlist <- edgeMatrix(g)[1,]
+  tolist <- edgeMatrix(g)[2,]
+
+  edgeData(gdual,from=as.character(fromlist),to=as.character(tolist),attr="weight") <- retlist$lengths
+
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+  
+  res$gamma <- rg.mcf.find.gamma(gflow)
+
+
+  beta <- calcBeta(demands,gdual)
+  
+  lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
+
+  ##put back the demands labels instead of indices
+  demands <- rg.demands.relable.from.indices(demands,nodelabels)
+  nodes(gflow) <- nodelabels
+  nodes(gdual) <- nodelabels
+
+  retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
+                   phases=retlist$totalphases,e=e,
+                   ratio=foundratio,
+                   bound=ratiobound
+                   )
+}
+
+rg.minimum.congestion.flow.int.c <- function(g,
+                                     demands,
+                                     e=0.1,
+                                     updateflow=TRUE,
+                                     progress=FALSE,
+                                     permutation="random",
+                                     deltaf=1.0) {
+
+  nodelabels <- nodes(g)
+  demands <- rg.demands.relable.to.indices(demands,nodelabels)
+  g <- rg.relabel(g)
+
+  em <- edgeMatrix(g)
+  nN <- nodes(g)
+  nv <- length(nN)
+  
+  ne <- ncol(em)
+  eW <- unlist(edgeWeights(g))
+
+  cap <- as.double(edgeData(g,attr="capacity"))
+
+  demands.sources <- as.integer(lapply(demands,"[[","source"))
+  demands.sinks <- as.integer(lapply(demands,"[[","sink"))
+  demands.demand <- lapply(demands,"[[","demand")
+  retlist <- .Call("rg_min_congestion_flow_int",
                    as.double(cap),
                    as.integer(em-1),
                    as.integer(nv),
@@ -1581,7 +1765,6 @@ rg.set.all.graph.edge.weights <- function(g,val=0.0)  {
 ### return - new graph with edge weights set
 
 rg.max.concurrent.flow.graph <- function(g,demands) {
-  print("in rg.max.concurrent.flow.graph")
   g <- rg.set.all.graph.edge.weights(g)
   for(d in demands) {
     for(p in names(d$paths)) {
@@ -1625,7 +1808,6 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
-  print("IN: rg.minimum.congestion.flow")
   res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode,permutation=permutation,deltaf=1.0)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
   
@@ -1711,44 +1893,65 @@ rg.generate.random.graph <- function(n=10,mindeg=2,maxdeg=20,
     }
   }
   gi <- as.directed(gi)
+  # Finally convert to RBGL - my preferred library for graphs
   G <- rg.relabel(igraph.to.graphNEL(gi))
   return(G)
 }
 
 
-### Generate an augmented graph to represent a wavelength routed
-### network with count wavelengths on each link
-
-rg.augment.graph.for.wavelengths <- function(g,count) {
+rg.augment.graph.for.wavelengths <- function # Augment graph for wavelengths
+### Augments a directed graph with a copy for each wavelength. Source and sink
+### nodes are created to attach the demands to.
+(g,    ##<< graphNEL object to augment
+ count ##<< number of wavelengths (same on each link)
+ ) {
   ## create as many graph as there are wavelengths as simple copies,
   ## they are not connected at the moment
   edgeL <- list()
   nodeL <- c()
+  linkgroupmap <- list()
   for( i in 1:count ) {
-    inedgeL <- mapply(paste0,edges(g),MoreArgs=list("L",i),SIMPLIFY=FALSE)
+    inedgeL <- mapply(paste0,graph::edges(g),MoreArgs=list("L",i),SIMPLIFY=FALSE)
     innodeL <- as.vector(paste0(nodes(g),"L",i))
     names(inedgeL) <- innodeL
     edgeL <- append(edgeL,inedgeL)
     nodeL <- append(nodeL,innodeL)
-    
   }
+  edgenames <- names(edgeData(g))
+  for(e in edgenames) {
+    for( i in 1:count ) {
+      ed <- sapply(strsplit(e,"\\|"),function(x) paste0(x,"L",i))[,1]
+      circuit.name <- paste0(ed[[1]],"|",ed[2])
+      linkgroupmap[[circuit.name]] <- e
+    }
+  }
+
   #nodeL <- append(nodeL,nodes(g))
   ga <- new("graphNEL",nodeL,edgeL,"directed")
   edgeDataDefaults(ga,attr="capacity") <- 1.0
   ga <- rg.set.weight(ga,1.0)
   ga <- rg.set.capacity(ga,1.0)
   ## now connect the graphs to nodes of the same name as the original nodes
-  ga <- addNode(nodes(g),ga)
+  ## but with nodes split into source and sink by appending s and t to names
+  ga <- addNode(as.vector(paste0(nodes(g),"s")),ga)
+  ga <- addNode(as.vector(paste0(nodes(g),"t")),ga)
   for(v in nodes(g)) {
     for( i in 1:count ) {
       node <- paste0(v,"L",i)
-      ga <- addEdge(v,node,ga)
-      edgeData(ga,v,node,attr="capacity") <- as.integer(degree(g,v)$inDegree)
-      ga <- addEdge(node,v,ga)
-      edgeData(ga,node,v,attr="capacity") <- as.integer(degree(g,v)$inDegree)
+      ga <- addEdge(paste0(v,"s"),node,ga)
+      edgeData(ga,paste0(v,"s"),node,attr="capacity") <- as.integer(graph::degree(g,v)$inDegree)
+      ga <- addEdge(node,paste0(v,"t"),ga)
+      edgeData(ga,node,paste0(v,"t"),attr="capacity") <- as.integer(graph::degree(g,v)$inDegree)
     }
   }
-  return(ga)
+  return(list(ga=ga,linkgroupmap=linkgroupmap))
+  ### graphNEL object augmented with count copies of the original
+  ### graph, an original node n for the wavelength l is labelled as
+  ### nLl. Additional nodes nt and ns are created for the source/sink
+  ### at the orignal node n. Now we have edges ns -> nLl and nLl -> nt
+  ### as well as the original edges between the nodes (albeit in
+  ### multiple copies of the graph) This is better understood using a
+  ### picture...
 }
 
 

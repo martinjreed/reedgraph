@@ -22,7 +22,45 @@ BLOOMLENGTH <- 256
 BLOOMCHUNKS <- ceiling(BLOOMLENGTH/32)
 ALLZEROS <- rep(0,BLOOMCHUNKS)
 
-##
+## CAREFUL this library uses a fragile encoding of length.
+## you must not change the Bloom length and then use variables
+## that were generated using the old Bloom length
+rg.set.bloomlength <- function(m) {
+  BLOOMLENGTH <<- m
+  BLOOMCHUNKS <<- ceiling(BLOOMLENGTH/32)
+  ALLZEROS <<- rep(0,BLOOMCHUNKS)
+  
+}
+
+rg.prob.false.free <- function(m,alpha,beta) {
+  return((1-0.618503^(m/alpha))^beta)
+}
+
+rg.exp.bloom.length <- function(alpha,beta) {
+  notconverged <- TRUE
+  Em <- (1-0.618503^(1/alpha))^beta
+  m <- 2
+  prod=1
+  while(prod > 0) {
+    prod=1
+    for(i in 1:m-1) {
+      prod <- prod * (1- (1-0.618503^(i/alpha))^beta)
+    }
+    Em <- Em + m * (1-0.618503^(m/alpha))^beta * prod
+    m <- m + 1
+  }
+  cat("Expected is ",Em," converged at m=",m,"\n")
+  return(Em)
+}
+
+rg.test.exp.bloom.length <- function(m,alpha,beta) {
+  rg.set.bloomlength(m)
+  k <- rg.bloom.optimum.k(m,alpha)
+  rg.test.fp.averages()
+  
+}
+
+## generate a random FID with n elements
 rg.random.fid <-function(n,k=1) {
   fid <- ALLZEROS
   for(i in 1:n) {
@@ -32,6 +70,8 @@ rg.random.fid <-function(n,k=1) {
   return(fid)
 }
 
+## count the number of false positives for
+## an FID against t off path (random) LIDs
 rg.test.fp <- function(n,t,k=1) {
   count <- 0
   fid <- rg.random.fid(n,k)
@@ -47,6 +87,11 @@ rg.test.fp <- function(n,t,k=1) {
   return(count)
 }
 
+## find the false potisive rate for
+## n (random) elements coded in a Bloom filter
+## and compared against t off path (random) LIDs
+## work this out over a averages and give the
+## mean false postive rate
 rg.test.fp.averages <-function(n,t,k=1,a) {
   sum <- 0
   for(i in 1:a) {

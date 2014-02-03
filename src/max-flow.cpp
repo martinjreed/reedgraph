@@ -583,7 +583,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	  p = penult[p];
 	}
 	
-	if (demands[i].path_flow_map.find(mmgpath) == demands[i].path_flow_map.end()) {
+	if (demands[i].path_flow_map.find(path) == demands[i].path_flow_map.end()) {
 	  demands[i].path_flow_map[path] = mincap;
 	  number_flows++;
 	} else {
@@ -606,7 +606,9 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
       assigned = count;
       for(int i=0 ; i<num_dem; i++) {
 	best_demands[i].flow = int_demands[i].flow;
-	best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	//best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	best_demands[i].path_flow_map.clear();
+	best_demands[i].path_flow_map.insert(int_demands[i].path_flow_map.begin(),int_demands[i].path_flow_map.begin());
       }
     } 
 

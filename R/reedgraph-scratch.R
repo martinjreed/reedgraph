@@ -429,6 +429,7 @@ rg.count.edge.flows <- function(g,demands) {
       demands[[i]]$paths[[j]] <- 1.0
     }
   }
+  gcount <- rg.max.concurrent.flow.graph(g,demands)
   return(gcount)
 }
 
@@ -1028,6 +1029,8 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,
   ## This is a bit of a mess. RBGL only understands indexes for nodes
   ## so all the names need to be mapped to indices. This is for nodes, edges
   ## and the linkgroup map. They will be remapped at the end.
+    link2linkgroup <- c()
+    linkgroupcap <- c()
   if(!is.null(linkgroupmap)) {
     link2name <- names(edgeData(g))
     
@@ -1046,6 +1049,10 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,
       linkgroup
     }
     link2linkgroup[is.na(link2linkgroup)] <- 0
+    ## Not sure about below!
+    link2linkgroup <- link2linkgroup - 1
+  } else {
+      link2linkgroup <- c()
   }
   nodelabels <- nodes(g)
   demands <- rg.demands.relable.to.indices(demands,nodelabels)
@@ -1166,7 +1173,7 @@ rg.max.concurrent.flow.int.c <- function(g,demands,e=0.1,eInternal=NULL,
                    environment(),
                    permutation,
                    deltaf,
-                   link2linkgroup-1,
+                   link2linkgroup,
                    linkgroupcap
                    );
   

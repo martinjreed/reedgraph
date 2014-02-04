@@ -38,11 +38,11 @@ double poor_drand48() {
 }
 
 
-void make_heap(std::vector< std::pair<double, std::vector<int> > >::iterator,
-	       std::vector< std::pair<double, std::vector<int> > >::iterator,
-	       bool operator()(std::pair<double, std::vector<int> > a,
-			       std::pair<double, std::vector<int> > b)
-	       );
+// void make_heap(std::vector< std::pair<double, std::vector<int> > >::iterator,
+// 	       std::vector< std::pair<double, std::vector<int> > >::iterator,
+// 	       bool operator()(std::pair<double, std::vector<int> > a,
+// 			       std::pair<double, std::vector<int> > b)
+// 	       );
 
 
 struct less_demand {

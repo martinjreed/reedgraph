@@ -822,19 +822,25 @@ rg.fleischer.max.concurrent.flow.c <- function(g,
                    )
 }
 
-rg.max.concurrent.flow.int <- function(g,
-                                       demands,
-                                       e=0.1,
-                                       updateflow=TRUE,
-                                       progress=FALSE,
-                                       permutation="random",
-                                       deltaf=1.0) {
-  
-  nodelabels <- nodes(g)
-  demands <- rg.demands.relable.to.indices(demands,nodelabels)
-  g <- rg.relabel(g)
 
-  em <- edgeMatrix(g)
+rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent Flow
+### Computes the integer minimum congestion concurrent flow
+### Based on testing for best integer flow so far as part of fractional
+### multicommodity flow solution.
+(g, ##< graphNEL
+ demands, ##< demands - list (index character count) of list("source","sink",demand)
+ e=0.1, ##< approximation limit 0 < e < 1.0, smaller is more accurate but takes longer
+ updateflow=TRUE, ##< update the flow
+ progress=FALSE, ##< display progress bar (not working in latest version)
+ permutation="random", ##< only random in this version
+ deltaf=1.0 ##< not used in this version
+ ) {
+    
+    nodelabels <- nodes(g)
+    demands <- rg.demands.relable.to.indices(demands,nodelabels)
+    g <- rg.relabel(g)
+    
+    em <- edgeMatrix(g)
   nN <- nodes(g)
   nv <- length(nN)
   
@@ -887,6 +893,15 @@ rg.max.concurrent.flow.int <- function(g,
                    ratio=foundratio,
                    bound=ratiobound
                    )
+### a list of many things:
+### demands - list of lists("source","sink",val,flow,path) <-format needs checking
+### gflow - graphNEL with flow on each edge as a weight
+### gdual -graphNEL with dual graph lengths - only useful for analysis
+### beta - the linear dual problem limit
+### lambda - the linear primal problem limit
+### phases - the number of phases it took
+### ratio - the found ratio between primal/dual, would like this to be near 1.0
+### bound - the expected ratio between primal/dual
 }
 
 ### As above but using prescaling to speed it up

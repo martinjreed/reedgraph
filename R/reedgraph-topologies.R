@@ -62,22 +62,3 @@ rg.create.all.graphs.pop.mappings <- function(graphs) {
 }
 
 
-### Demo for students to simulate a "dice" loaded with exponential
-### like distribution.
-### input: n - number of throws to return
-### rate - the parameter in the (negative expontential)
-### returns vector of n throw results
-loadeddice <- function(n,rate=0.7) {
-  x <- floor(rexp(n,rate))+1
-  x <- x[ 1 <= x & x <=6]
-  return(x)
-}
-
-### Demo for students to simulate a "dice"
-### input: n - number of throws to return
-### returns vector of n throw results
-dice <- function(n) {
-  x <- floor(runif(n,min=1,max=7))
-  x <- x[ 1 <= x & x <=6]
-  return(x)
-}

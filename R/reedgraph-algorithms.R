@@ -22,25 +22,6 @@ require("RBGL",quietly=TRUE,warn.conflicts=FALSE)
 require("genalg",quietly=TRUE)
 require("inlinedocs")
 
-### NOTE THIS IS USING INLINEDOCS
-### EXAMPLE
-rg.inlinedocs.example <- function # Example function
-### Here is some maths in the longer description \eqn{n} 
-### which probably has more lines
-##references<< Abelson, Hal; Jerry Sussman, and Julie
-##Sussman. Structure and Interpretation of Computer
-##Programs. Cambridge: MIT Press, 1984.
-(n,    ##<< description of vairiables 
- times
-### here is a different way: Number of Fermat tests to perform. More
-### tests are more likely to give accurate results.
- ){
-  if(times==0)TRUE
-  ##seealso<< \code{\link{fermat.test}}
-  else if(fermat.test(n)) is.pseudoprime(n,times-1)
-  else FALSE
-### the return value logical TRUE if n is probably prime.
-}
 
 ### This is rather dangerous and discouraged as it erases any state in
 ### the global environment that would mask objects from this
@@ -2591,3 +2572,308 @@ rg.integer.min.congestion.flow.ga.graph <- function(string,split) {
   g
 }
 
+rg.count.accepted.demands <- function # Count the number of accepted demands
+### Note that due to numerical accuracy comparing flow == demand
+### is potentially risky. This actually checks if flow >= demand - 1e-03 to
+### allow for rounding errors. This limit can be set
+(demands,     ##<< demands to check
+ limit=1e-03  ##<< tolerance on equality of flow == demand to allow for rounding errors
+ ) {
+  accepted <- sapply(demands,function(i) {i$flow >= i$demand - limit})
+  return(length(accepted[accepted==TRUE]))
+  ### number of accepted demands
+}
+
+### Returns a graph with number of flows in each edge
+rg.count.edge.flows <- function(g,demands) {
+  for(i in 1:length(demands)) {
+    for(j in names(demands[[i]]$paths)) {
+      ##results$demands[[i]]$paths <- 1.0
+      demands[[i]]$paths[[j]] <- 1.0
+    }
+  }
+  gcount <- rg.max.concurrent.flow.graph(g,demands)
+  return(gcount)
+}
+
+### Calculate the integer minimum congestion flow. It uses the max
+### concurrent flow (fractional) to try various combinations and records the best
+###
+###
+rg.max.concurrent.flow.int.c <- function # Integer minimum congestion flow
+(g, ##<< graphNEL to optimise
+ demands, ##<< demands in a list ("1"=list("source","sink","demand","flow","paths")
+          ##   paths is a list of paths from a fractional flow result
+ e=0.1, ##<< approximation limit 0 means exact, infinitely slow, 1.0 inexact but fast
+        ##   best to choose a value between 0.05-0.1
+ eInternal=NULL, ##<< change e value used internally, best left NULL
+ updateflow=TRUE, ##<< update the flow (slightly fast if FALSE, but not useful!)
+ progress=FALSE, ##<< create a progress bar, not working in this version
+ scenario=NULL, ##<< use a previous scenario to seed the paths used to attempt
+ permutation="random", ##<< how the demands are chosen can be
+                       ## either c(....) integers specifying demand order
+                       ## or "fixed" done in fixed order
+                       ## "random" done in random order
+                       ## "lowest" done in lowest cost (lowest dual path) order
+ deltaf=1.0, ##<< fix the update to start with a higher value to try speeding up
+             ##   best left alone, but if used make it higher than 1
+ linkgroupmap=NULL ##<< used to group links which are multiple wavelengths on a fibre
+                   ## not working yet, leave NULL
+ ) {
+
+  ## This is a bit of a mess. RBGL only understands indexes for nodes
+  ## so all the names need to be mapped to indices. This is for nodes, edges
+  ## and the linkgroup map. They will be remapped at the end.
+    link2linkgroup <- c(-1)
+    linkgroupcap <- c(-1)
+  if(!is.null(linkgroupmap)) {
+    link2name <- names(edgeData(g))
+    
+    linkgroup2name <- unique(as.character(linkgroupmap))
+    
+    link2linkgroup <- rep(NA,length(link2name))
+    linkgroupcap <- rep(0.0,length(linkgroup2name))
+    for(n in names(linkgroupmap)) {
+      i <- linkgroupmap[[n]]
+      linkgroup <- which(linkgroup2name == i)
+      edgepair <- strsplit(n,"\\|")[[1]]
+      
+      linkgroupcap[linkgroup] <- linkgroupcap[linkgroup] +
+        as.double(edgeData(g,from=edgepair[[1]],to=edgepair[[2]],attr="capacity"))
+    link2linkgroup[which(link2name == n)] <-
+      linkgroup
+    }
+    link2linkgroup[is.na(link2linkgroup)] <- 0
+    ## Not sure about below!
+    link2linkgroup <- link2linkgroup - 1
+  } 
+  nodelabels <- nodes(g)
+  demands <- rg.demands.relable.to.indices(demands,nodelabels)
+  g <- rg.relabel(g)
+
+  ## OK all the relabeling is done, phew
+  
+  ## note this is not the dual value
+  calcD <- function() {
+    sum(vcapacity*vlength)
+  }
+
+  if(is.null(eInternal))
+    eInternal <- e
+
+  if(is.numeric(permutation))
+    permutation <- permutation - 1
+  else if(permutation == "fixed")
+    permutation <- 0:(length(demands)-1)
+  else if(permutation == "random")
+    permutation <- -1
+  else if(permutation == "lowest")
+    permutation <- -2
+
+  savedemands <- demands
+  vdemands <- as.double(lapply(demands,"[[","demand"))
+  vcapacity <- as.double(edgeData(g,attr="capacity"))
+  vlength <- rep(0.0,length(vcapacity))
+  vdemandflow <- rep(0.0,length(vcapacity))
+  L <- length(vlength)
+  delta <- deltaf * (L / (1-e)) ^ (-1/e)
+  vlength <- delta / vcapacity
+  edgeMap <- adjMatrix(g)
+
+  demands.paths <- as.integer(c())
+  bestpaths <- as.integer(c())
+  rdemandpaths <- list();
+
+  if(!is.null(scenario)) {
+    bestgamma=scenario$intgammalist[[1]]
+    for(d in 1:length(demands)) {
+      rdemandpaths[[d]] <- list()
+      demands.paths <- append(demands.paths,d-1)
+      demands.paths <- append(demands.paths,length(demands[[d]]$paths))
+      missing <- TRUE
+      
+      for(p in 1:length(demands[[d]]$paths)) {
+        pathi <-
+          as.integer(strsplit
+                     (names(demands[[d]]$paths[p]),"|",fixed=TRUE)[[1]])
+        pathi <- pathi -1
+        if(identical(names(demands[[d]]$paths[p]),
+                     names(scenario$intdemands[[d]]$paths))) {
+          cat("best path in",d,names(scenario$intdemands[[d]]$paths),", ",p,"\n")
+          missing <- FALSE
+          bestpaths[d] <- p
+        }
+        rdemandpaths[[d]][[p]] <- pathi
+        demands.paths <- append(demands.paths,length(pathi))
+        demands.paths <- append(demands.paths,pathi)
+      }
+      if(missing)
+        cat("best path in",d,"is MISSING!\n")
+      
+    }
+    print(bestpaths)
+  } else {
+    bestgamma <- Inf
+  }
+  ## code the paths as integers
+  ## [demandno(e.g=1) numdempaths lengthpath1 path1[1] path1[2] ...
+  ##  lengthpath2 path2[1] path2[2]....demandno(e.g=2)....]
+
+  demandpaths <- list()
+  j <- 1
+  for(d in demands) {
+    demandpaths[[j]] <- list()
+    k <- 1
+    for(p in names(d$paths)) {
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- as.integer(pv[1:length(pv)-1])
+      tolist <- as.integer(pv[2:length(pv)])
+      me <- rbind(fromlist,tolist)
+      pv <- c()
+      for(i in 1:length(fromlist)) {
+        v <- as.vector(me[,i])
+        em <- edgeMap[v[1],v[2]]
+        pv <- append(pv,em)
+      }
+      demandpaths[[j]][[k]] <- pv -1
+      k <- k + 1
+    }
+    j <- j + 1
+  }
+
+
+  
+  m <- length(rg.edgeL(g))
+
+  # old for ori
+  # doubreq <- 2 * ceiling(1/e * log(m/(1-e),base=(1+e)))
+  doubreq <- 2* ceiling(log(1.0/delta,1+eInternal))
+  if(progress != FALSE) {
+    pb <- txtProgressBar(title = "progress bar", min = 0,
+                         max = doubreq, style=3)
+  } else {
+    pb <- NULL
+  }
+  retlist <- .Call("rg_max_concurrent_flow_int_c",
+                   demandpaths,
+                   vdemands,
+                   vcapacity,
+                   e,
+                   eInternal,
+                   progress,
+                   pb,
+                   bestgamma,
+                   environment(),
+                   permutation,
+                   deltaf,
+                   link2linkgroup,
+                   linkgroupcap
+                   );
+  
+  if( progress != FALSE) {
+    close(pb)
+  }
+
+  foundbestpaths <- retlist$bestpaths + 1
+  ## now need to unpack results
+  demands <- savedemands
+  
+  for(n in 1:length(demands)) {
+    flow <- 0
+    for(i in 1:length(demands[[n]]$paths)) {
+      flow <- flow + retlist$pathflows[[n]][[i]]
+      demands[[n]]$paths[[i]] <- retlist$pathflows[[n]][[i]]
+    }
+    demands[[n]]$flow <- flow
+  }
+
+  gdual <- g
+  gdual <- rg.set.weight(gdual,retlist$vlengths)
+  scalef <- 1 / log(1/delta,base=(1+e))
+  demands <- rg.max.concurrent.flow.rescale.demands.flow(demands,scalef)
+  beta <- calcBeta(demands,gdual)
+  betar <- calcBetaRestricted(demands,gdual)
+  lambda=NULL
+  lambda <- calcLambda(demands)
+  foundratio <- beta / lambda
+  ratiobound <- (1-e)^-3
+    
+  gflow <- rg.max.concurrent.flow.graph(gdual,demands)
+
+  if(FALSE) {
+    for(d in 1:length(demandpaths)) {
+      cat("demand ",d,": ")
+      for(p in 1:length(demandpaths[[d]])) {
+        mincap = Inf
+        for(ed in demandpaths[[d]][[p]]) {
+          if(vcapacity[ed+1] < mincap) {
+            mincap = vcapacity[ed+1]
+          }
+        }
+        cat(" ",retlist$pathcount[[d]][[p]])
+        if(mincap < savedemands[[d]]$demand) {
+          cat("u")
+        } else {
+          cat("o")
+        }
+        
+        if(foundbestpaths[[d]] == p)
+          cat("F")
+        
+        if(identical(names(demands[[d]]$paths[p]),
+                     names(scenario$intdemands[[d]]$paths))) {
+                                        #if(bestpaths[[d]] == p)
+          cat("X")
+        }
+      }
+      cat("\n")
+    }
+  }
+
+  intdemands <- list()
+  bestpaths=retlist$bestpaths+1
+
+  for(i in names(demands)) {
+    intdemands[[i]]$source <- demands[[i]]$source
+    intdemands[[i]]$sink <- demands[[i]]$sink
+    intdemands[[i]]$demand <- demands[[i]]$demand
+    intdemands[[i]]$flow <- demands[[i]]$demand
+    intdemands[[i]]$paths <- list()
+    intdemands[[i]]$paths[[names(demands[[i]]$paths[bestpaths[as.integer(i)]])]] <-
+      demands[[i]]$demand      
+  }
+
+
+
+
+  ##put back the demands labels instead of indices
+  demands <- rg.demands.relable.from.indices(demands,nodelabels)
+  intdemands <- rg.demands.relable.from.indices(intdemands,nodelabels)
+  nodes(gflow) <- nodelabels
+  nodes(gdual) <- nodelabels
+
+  gflowint <- rg.max.concurrent.flow.graph(gdual,intdemands)
+    
+    ##value<< Returns a list with many elements, the most useful are
+  retval <- list(demands=demands,
+                 gflow=gflow,
+                 gdual=gdual,
+                 beta=beta,
+                 betar=betar,
+                 lambda=lambda,
+                 phases=retlist$totalphases,
+                 e=e,
+                 vlength=retlist$vlengths,
+                 countgamma=retlist$countgamma,
+                 bestgamma=retlist$bestgamma,
+                 bestpaths=bestpaths,
+                 pathdiffcount=retlist$pathdiffcount,
+                 phasepathdiffcount=retlist$phasepathdiffcount,
+                 gammavals=retlist$gammavals,
+                 betavals=retlist$betavals,
+                 lambdavals=retlist$lambdavals,
+                 intdemands=intdemands,     ##<< intdemands - the output demands list with the "optimal" path for each demand
+                 gflowint=gflowint     ##<< gflowint - graphNEL with edge weight equal to assigned flow
+)
+  return(retval)
+}

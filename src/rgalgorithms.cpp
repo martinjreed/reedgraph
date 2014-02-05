@@ -37,6 +37,8 @@ double poor_drand48() {
   return (double(rand()) / RAND_MAX);
 }
 
+std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
+					   std::vector<double>& vlengths);
 
 // void make_heap(std::vector< std::pair<double, std::vector<int> > >::iterator,
 // 	       std::vector< std::pair<double, std::vector<int> > >::iterator,
@@ -106,6 +108,24 @@ double calcD(Graph_rg& gdual) {
     sum += l*c;
   }
   return sum;
+}
+
+inline std::vector<double> 
+calcgraphweights(std::vector< std::vector< std::vector<int> > > &paths,
+		 std::vector<int> &pathrecord,
+		 std::vector<double> &demands,
+		 int M) {
+  int numD=demands.size();
+  std::vector<double> weights(M,0.0);
+  std::vector<int>::iterator vi,ve;
+	
+  for(int i=0; i<numD;i++) {
+    ve=paths[i][pathrecord[i]].end();
+    for(vi=paths[i][pathrecord[i]].begin(); vi != ve; vi++) {
+      weights[*vi] += demands[i];
+    }
+  }
+  return(weights);
 }
 
 
@@ -231,100 +251,9 @@ double calcBeta(std::vector<rg_demand>& demands,
   return beta;
 }
 
-std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
-					   std::vector<double>& vlengths) {
-  int numpaths = paths.size();
-  std::vector<int>::iterator vi;
-  double sum=0.0;
-  int minp=-1;
-  double min=DBL_MAX;
-	
-  std::vector<long> trypath(numpaths);
-  for(int i=0;i<numpaths;i++) {
-    trypath[i]=i;
-  }
-  random_shuffle(trypath.begin(),trypath.end());
 
-  std::vector<long>::iterator tit,tend;
-	
-  tend=trypath.end();
-  for(tit=trypath.begin();tit != tend;tit++) {
-    sum=0;
-    for(vi=paths[*tit].begin(); vi != paths[*tit].end(); vi++) {
-      sum+=vlengths[*vi];
-    }
-    if( sum < min) {
-      minp=*tit;
-      min = sum;
-    }
-  }
-  return (std::pair<int,double>(minp,min));
-}
 
-std::pair<int,double> 
-findshortestpathcostopt(
-			std::vector< std::vector<int> >& paths,
-			std::vector<double>& vlengths,
-			std::vector<double>& vcapacity,
-			std::vector<double>& vweights,
-			double demand) {
-  int numpaths = paths.size();
-  std::vector<int>::iterator vi;
-  double sum=0.0;
-  int minp=-1;
-  double min=DBL_MAX;
-	
-  std::vector<long> trypath(numpaths);
-  for(int i=0;i<numpaths;i++) {
-    trypath[i]=i;
-  }
-  random_shuffle(trypath.begin(),trypath.end());
 
-  std::vector< std::pair<int,double> > best;
-  std::vector< std::pair<int,double> >::iterator bit,bend;
-
-  best.push_back(std::pair<int,double>(-1,DBL_MAX));
-
-  std::vector<long>::iterator tit,tend;
-	
-  tend=trypath.end();
-  for(tit=trypath.begin();tit != tend;tit++) {
-    sum=0;
-    for(vi=paths[*tit].begin(); vi != paths[*tit].end(); vi++) {
-      sum+=vlengths[*vi];
-    }
-    if( sum < min) {
-      minp=*tit;
-      min = sum;
-    }
-    //	  if( sum < best.front().second * 0.9999999999999 ) {
-    if( sum < best.front().second) {
-      best.clear();
-      best.push_back(std::pair<int,double>(*tit,sum));
-      //	  } else if(sum < best.front().second * 1.0000000000001) {
-    } else if(sum == best.front().second) {
-      best.push_back(std::pair<int,double>(*tit,sum));
-    }
-  }
-  //return (std::pair<int,double>(minp,min));
-	
-  bend=best.end();
-  double bestcap=-DBL_MAX;
-  for(bit=best.begin(); bit != bend; bit++){
-    double mincap = DBL_MAX;
-    for(vi=paths[(*bit).first].begin(); vi != paths[(*bit).first].end(); vi++) {
-      if(vcapacity[*vi]-vweights[*vi]-demand < mincap)
-	mincap = vcapacity[*vi]-vweights[*vi]-demand;
-    }
-    if(mincap > bestcap){
-      bestcap = mincap;
-      minp=(*bit).first;
-      min=(*bit).second;
-    }
-
-  }
-  return (std::pair<int,double>(minp,min));
-}
 
 
 int findshortestpath(std::vector< std::vector<int> >& paths,
@@ -2257,23 +2186,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
 
 
 
-inline std::vector<double> 
-calcgraphweights(std::vector< std::vector< std::vector<int> > > &paths,
-		 std::vector<int> &pathrecord,
-		 std::vector<double> &demands,
-		 int M) {
-  int numD=demands.size();
-  std::vector<double> weights(M,0.0);
-  std::vector<int>::iterator vi,ve;
-	
-  for(int i=0; i<numD;i++) {
-    ve=paths[i][pathrecord[i]].end();
-    for(vi=paths[i][pathrecord[i]].begin(); vi != ve; vi++) {
-      weights[*vi] += demands[i];
-    }
-  }
-  return(weights);
-}
+
 
 inline double calcGroupGamma(std::vector<double> weights,
 			     std::vector<double> vcapacity,
@@ -2374,7 +2287,6 @@ SEXP rg_max_concurrent_flow_int_c
  SEXP Rlink2linkgroup,
  SEXP Rlinkgroupcap
  ) {
-
   bool progress=Rcpp::as<bool>(Rprogress);
   double e = Rcpp::as<double>(Re);
   double eInternal = Rcpp::as<double>(ReInternal);
@@ -2383,6 +2295,7 @@ SEXP rg_max_concurrent_flow_int_c
   std::vector<double> vdemands = Rcpp::as< std::vector<double> > (Rdemands);
   std::vector<double> origdemands(vdemands);	
   std::vector<int> permutation = Rcpp::as< std::vector<int> > (Rpermutation);
+
   std::vector<int> link2linkgroup = Rcpp::as< std::vector<int> > (Rlink2linkgroup);
   std::vector<int> linkgroupcap = Rcpp::as< std::vector<int> > (Rlinkgroupcap);
   double deltaf = Rcpp::as<double>(Rdeltaf);
@@ -2730,7 +2643,7 @@ SEXP rg_max_concurrent_flow_int_c
     if(using_normal_gamma) {
       gweights = 
 	calcgraphweights(paths,pathrecord,origdemands,M);
-      if(link2linkgroup.size() > 0) {
+      if(link2linkgroup[0] != -1) {
 	gamma = calcgamma(gweights,vcapacity);
 	if(gamma >=0 )
 	  gamma = calcGroupGamma(gweights,vcapacity,link2linkgroup,linkgroupcap);
@@ -2998,7 +2911,100 @@ SEXP rg_test_every_path_inner
 	
 }
 
-
-
-
 __END_DECLS
+
+std::pair<int,double> findshortestpathcost(std::vector< std::vector<int> >& paths,
+					   std::vector<double>& vlengths) {
+  int numpaths = paths.size();
+  std::vector<int>::iterator vi;
+  double sum=0.0;
+  int minp=-1;
+  double min=DBL_MAX;
+	
+  std::vector<long> trypath(numpaths);
+  for(int i=0;i<numpaths;i++) {
+    trypath[i]=i;
+  }
+  random_shuffle(trypath.begin(),trypath.end());
+
+  std::vector<long>::iterator tit,tend;
+	
+  tend=trypath.end();
+  for(tit=trypath.begin();tit != tend;tit++) {
+    sum=0;
+    for(vi=paths[*tit].begin(); vi != paths[*tit].end(); vi++) {
+      sum+=vlengths[*vi];
+    }
+    if( sum < min) {
+      minp=*tit;
+      min = sum;
+    }
+  }
+  return (std::pair<int,double>(minp,min));
+}
+
+std::pair<int,double> 
+findshortestpathcostopt(
+			std::vector< std::vector<int> >& paths,
+			std::vector<double>& vlengths,
+			std::vector<double>& vcapacity,
+			std::vector<double>& vweights,
+			double demand) {
+  int numpaths = paths.size();
+  std::vector<int>::iterator vi;
+  double sum=0.0;
+  int minp=-1;
+  double min=DBL_MAX;
+	
+  std::vector<long> trypath(numpaths);
+  for(int i=0;i<numpaths;i++) {
+    trypath[i]=i;
+  }
+  random_shuffle(trypath.begin(),trypath.end());
+
+  std::vector< std::pair<int,double> > best;
+  std::vector< std::pair<int,double> >::iterator bit,bend;
+
+  best.push_back(std::pair<int,double>(-1,DBL_MAX));
+
+  std::vector<long>::iterator tit,tend;
+	
+  tend=trypath.end();
+  for(tit=trypath.begin();tit != tend;tit++) {
+    sum=0;
+    for(vi=paths[*tit].begin(); vi != paths[*tit].end(); vi++) {
+      sum+=vlengths[*vi];
+    }
+    if( sum < min) {
+      minp=*tit;
+      min = sum;
+    }
+    //	  if( sum < best.front().second * 0.9999999999999 ) {
+    if( sum < best.front().second) {
+      best.clear();
+      best.push_back(std::pair<int,double>(*tit,sum));
+      //	  } else if(sum < best.front().second * 1.0000000000001) {
+    } else if(sum == best.front().second) {
+      best.push_back(std::pair<int,double>(*tit,sum));
+    }
+  }
+  //return (std::pair<int,double>(minp,min));
+	
+  bend=best.end();
+  double bestcap=-DBL_MAX;
+  for(bit=best.begin(); bit != bend; bit++){
+    double mincap = DBL_MAX;
+    for(vi=paths[(*bit).first].begin(); vi != paths[(*bit).first].end(); vi++) {
+      if(vcapacity[*vi]-vweights[*vi]-demand < mincap)
+	mincap = vcapacity[*vi]-vweights[*vi]-demand;
+    }
+    if(mincap > bestcap){
+      bestcap = mincap;
+      minp=(*bit).first;
+      min=(*bit).second;
+    }
+
+  }
+  return (std::pair<int,double>(minp,min));
+}
+

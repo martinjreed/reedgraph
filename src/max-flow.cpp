@@ -487,7 +487,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	//Rprintf("demand.demand=%lg\n",demand.demand);
 	NetGraph gtmp;
 	boost::copy_graph(gdual,gtmp);
-	
+	double best_gamma = DBL_MAX;
 	for(tie(ei,eend) = edges(gtmp); ei != eend; ei++) {
 	  int s = source(*ei,gtmp);
 	  int t = target(*ei,gtmp);
@@ -559,7 +559,10 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	put(edge_weight,gdual,ed.first,w);
 	double flow = get(edge_weight,glimit,el.first);
 	put(edge_weight,glimit,el.first,flow+mincap);
-
+	// This bit will capture the best gamma
+	double tmpGamma = 1.0 - (flow+mincap)/c;
+	if ( best_gamma > tmpGamma )
+	  best_gamma = tmpGamma;
 
 	std::list<Vertex> path;
 	path.push_front(f);
@@ -603,12 +606,14 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
     //Rprintf("Assigned %ld/%ld\n",count,num_dem);
     
     if(count > assigned) {
+      // need to put in here
+      // if ( bestgamma < gamma) leep best gamma result
       assigned = count;
       for(int i=0 ; i<num_dem; i++) {
 	best_demands[i].flow = int_demands[i].flow;
-	//best_demands[i].path_flow_map = int_demands[i].path_flow_map;
-	best_demands[i].path_flow_map.clear();
-	best_demands[i].path_flow_map.insert(int_demands[i].path_flow_map.begin(),int_demands[i].path_flow_map.begin());
+	best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	//best_demands[i].path_flow_map.clear();
+	//best_demands[i].path_flow_map.insert(int_demands[i].path_flow_map.begin(),int_demands[i].path_flow_map.begin());
       }
     } 
 

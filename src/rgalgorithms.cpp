@@ -1643,6 +1643,7 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
 
   Rcpp::List retdemandsi;
   for(int i=0 ; i<num_demands; i++) {
+    //Rprintf("demand %ld \n",i);
     Rcpp::List demand;
     demand.push_back(best_demands[i].demand,"demand");
     demand.push_back(best_demands[i].flow,"flow");
@@ -1666,6 +1667,7 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
 	spath.append("|");
 	spath.append(to_string<int>(*vi + 1));
       }
+      //Rprintf("path=%s\n",spath.c_str());
       paths.push_back(pmi->second,spath.c_str());
     }
     demand.push_back(paths,"paths");

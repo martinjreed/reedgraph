@@ -1,5 +1,5 @@
-CPPFLAGS = -g
-CPPFLAGS = -O
+#CPPFLAGS = -g
+CPPFLAGS = -O2
 all: rgalgorithms.so
 
 RSCRIPT= -I/Library/Frameworks/R.framework/Versions/3.0/Resources/library/Rcpp/include

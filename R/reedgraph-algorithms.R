@@ -844,7 +844,6 @@ rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent F
                  )
 
   demands <- retlist$demands
-
   delta <- (ne / (1-e)) ^ (-1/e) 
 
   scalef <- 1 / log(1/delta,base=(1+e))
@@ -1804,6 +1803,10 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
 rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
+    if(!isDirected(g)) {
+        print("g must be directed")
+        return(NULL)
+    }
   res <- rg.max.concurrent.flow.prescaled(g,demands,e,progress=progress,ccode,permutation=permutation,deltaf=1.0)
   res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
   

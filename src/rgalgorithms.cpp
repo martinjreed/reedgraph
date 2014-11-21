@@ -1683,7 +1683,7 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
   retlist.push_back(lengths,"lengths");
   retlist.push_back(g.lambda,"lambda");
   retlist.push_back(g.beta,"beta");
-  
+  retlist.push_back(g.gamma,"gamma");
   
   return wrap(retlist);
 

@@ -871,7 +871,8 @@ rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent F
   retlist2 <- list(demands=demands,gflow=gflow,gdual=gdual,beta=beta,lambda=lambda,
                    phases=retlist$totalphases,e=e,
                    ratio=foundratio,
-                   bound=ratiobound
+                   bound=ratiobound,
+                   gamma=retlist$gamma
                    )
 ### a list of many things:
 ### demands - list of lists("source","sink",val,flow,path) <-format needs checking
@@ -882,6 +883,7 @@ rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent F
 ### phases - the number of phases it took
 ### ratio - the found ratio between primal/dual, would like this to be near 1.0
 ### bound - the expected ratio between primal/dual
+### gamma - the fractional free capacity on most constrained link (bigger better).
 }
 
 ### As above but using prescaling to speed it up
@@ -2601,8 +2603,9 @@ rg.count.edge.flows <- function(g,demands) {
 
 ### Calculate the integer minimum congestion flow. It uses the max
 ### concurrent flow (fractional) to try various combinations and records the best
-###
-###
+### NOTE! Probably better to use rg.max.concurrent.flow.int() instead
+### if you want to find the best integer flows that meet the maximum
+### capacity. This function will overbook traffic (for negative gamma and lambda)
 rg.max.concurrent.flow.int.c <- function # Integer minimum congestion flow
 (g, ##<< graphNEL to optimise
  demands, ##<< demands in a list ("1"=list("source","sink","demand","flow","paths")

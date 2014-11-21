@@ -20,9 +20,27 @@
 #include "max-flow.hpp"
 #include <float.h>
 #include <boost/graph/copy.hpp>
+#include <boost/lexical_cast.hpp>
 using namespace boost;
 #include <R.h>
+#include <Rcpp.h>
 #include <Rinternals.h>
+#include <string>
+#include <sstream>
+#include <iostream>
+
+template <typename T>
+std::string to_string(T value)
+{
+  //create an output string stream
+  std::ostringstream os ;
+  
+  //throw the value into the string stream
+  os << value ;
+  
+  //convert the string stream into a string and return
+  return os.str() ;
+}
 
 inline double Graph_mf::calcD() {
   using namespace boost;
@@ -395,7 +413,8 @@ void Graph_mf::  max_concurrent_flow(std::vector<mf_demand> &demands,
 void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 					 std::vector<mf_demand> &best_demands,
 					 double e) {
-
+  using namespace std;
+  gamma = -DBL_MAX;
   std::vector<mf_demand>::iterator di;
   for(di=demands.begin(); di != demands.end(); di++) {
     di->flow = 0;
@@ -470,6 +489,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
     for(tie(ei,eend) = edges(glimit); ei != eend; ei++) {
       put(edge_weight,glimit,*ei,0.0);	    
     }
+    double local_gamma = DBL_MAX;
 
 
     long count=0;
@@ -483,11 +503,12 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
       //Rprintf("Doing demand %d, %ld -> %ld\n",i,vsource,vsink);
 
       //iterations
+      // we do not push through demand until it is full
+      // rather push just once, hence change here
       //while( D < 1.0 && demand.demand > 0) {
 	//Rprintf("demand.demand=%lg\n",demand.demand);
 	NetGraph gtmp;
 	boost::copy_graph(gdual,gtmp);
-	double best_gamma = DBL_MAX;
 	for(tie(ei,eend) = edges(gtmp); ei != eend; ei++) {
 	  int s = source(*ei,gtmp);
 	  int t = target(*ei,gtmp);
@@ -518,8 +539,11 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	//Rprintf("distance to sink=%lg\n",dist[vsink]);
 	if(dist[vsink] == DBL_MAX) {
 	  //Rprintf("infinite\n");
+	  int_demands[i].path_flow_map.clear();
+	  int_demands[i].flow = 0;
+	    
 	  continue;
-	  demand.demand = 0;
+	  //demand.demand = 0;
 	}
 	count++;
 	// go through the path (backwards) and find minimum capacity
@@ -543,6 +567,8 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 
 	// now we have the maximum flow we can push through this
 	// step, and update demand (will add flow later)
+	// due to earlier check mincap = demand.demand always!
+	// if this is not true, need to adapt later demands update!
 	mincap = demand.demand < mincap ? demand.demand : mincap;
 	demand.demand = demand.demand - mincap;
 
@@ -559,11 +585,11 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	put(edge_weight,gdual,ed.first,w);
 	double flow = get(edge_weight,glimit,el.first);
 	put(edge_weight,glimit,el.first,flow+mincap);
-	// This bit will capture the best gamma
+	// This bit will capture the gamma as we go through the edges
 	double tmpGamma = 1.0 - (flow+mincap)/c;
-	if ( best_gamma > tmpGamma )
-	  best_gamma = tmpGamma;
-
+	if ( local_gamma > tmpGamma )
+	  local_gamma = tmpGamma;
+	//Rprintf("edge %ld|%ld flow:%lg+%lg\n",p,f,flow,mincap);
 	std::list<Vertex> path;
 	path.push_front(f);
 	path.push_front(p);
@@ -573,14 +599,20 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 
 				 
 	while(f != vsource) {
-	  ed = edge(p,f,gdual);
-	  el = edge(p,f,glimit);
+
+
+	  ed = edge(p,f,gdual);	  el = edge(p,f,glimit);
 	  c =get(edge_capacity,gdual,ed.first);
 	  w =get(edge_weight,gdual,ed.first);
 	  w = w * (1 + (e * mincap) / c);
 	  put(edge_weight,gdual,ed.first,w);
 	  flow = get(edge_weight,glimit,el.first);
 	  put(edge_weight,glimit,el.first,flow+mincap);
+	  // This bit will capture the gamma as we go through the edges
+	  double tmpGamma = 1.0 - (flow+mincap)/c;
+	  if ( local_gamma > tmpGamma )
+	    local_gamma = tmpGamma;
+	  //Rprintf("edge %ld|%ld flow:%lg+%lg\n",p,f,flow,mincap);
 	  path.push_front(p);
 	  f = p;
 	  p = penult[p];
@@ -592,8 +624,10 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	} else {
 	  demands[i].path_flow_map[path] += mincap;
 	}
+	int_demands[i].path_flow_map.clear();
 	int_demands[i].path_flow_map[path] = mincap;
 	int_demands[i].flow = mincap;
+
 	demands[i].flow += mincap;
 	D=calcD();
 	//Rprintf("D=%lg\n",D);
@@ -603,30 +637,73 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 
     }
     //D=1.0;
-    //Rprintf("Assigned %ld/%ld\n",count,num_dem);
+    //Rprintf("Assigned (old %ld) %ld/%ld, gamma=(old:%lg)%lg\n",assigned,count,num_dem,gamma,local_gamma);
     
     if(count > assigned) {
-      // need to put in here
-      // if ( bestgamma < gamma) leep best gamma result
       assigned = count;
+      gamma=local_gamma;
       for(int i=0 ; i<num_dem; i++) {
-	best_demands[i].flow = int_demands[i].flow;
-	best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	best_demands[i].path_flow_map.clear();
+	//best_demands[i].flow = int_demands[i].flow;
+	//best_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+	for(pmi=int_demands[i].path_flow_map.begin();
+	    pmi != int_demands[i].path_flow_map.end(); pmi++) {
+	  std::list<Vertex> path = pmi->first;
+	  double val = pmi->second;
+	  best_demands[i].flow=val;
+	  best_demands[i].path_flow_map[path]=val;
+	}
 	//best_demands[i].path_flow_map.clear();
 	//best_demands[i].path_flow_map.insert(int_demands[i].path_flow_map.begin(),int_demands[i].path_flow_map.begin());
       }
-    } 
+    } else if (count == assigned && gamma < local_gamma) {
+      //Rprintf("found better\n");
+      gamma = local_gamma;
+      for(int i=0 ; i<num_dem; i++) {
+      	int_demands[i].flow = int_demands[i].flow;
+      	int_demands[i].path_flow_map = int_demands[i].path_flow_map;
+	std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+	for(pmi=best_demands[i].path_flow_map.begin();
+	    pmi != best_demands[i].path_flow_map.end(); pmi++) {
+	  std::list<Vertex> path = pmi->first;
+	  double val = pmi->second;
+	  best_demands[i].flow=val;
+	  best_demands[i].path_flow_map[path]=val;
+	}
 
+      	//best_demands[i].path_flow_map.clear();
+       	//best_demands[i].path_flow_map.insert(int_demands[i].path_flow_map.begin(),int_demands[i].path_flow_map.begin());
+      }
+    }
     phases++;
     totalphases++;
   }
   //Rprintf("Assigned %ld/%ld\n",assigned,num_dem);
-  for(int i=0 ; i<num_dem; i++) {
+  // for(int i=0 ; i<num_dem; i++) {
+  //   Rprintf("Demand %ld flow=%lg\n",i+1,best_demands[i].flow);
+  // }
+  // for(int i=0 ; i<num_dem; i++) {
     
-    //Rprintf("Demand %ld flow=%lg\n",i+1,best_demands[i].flow);
-
-  }
-
+  //   std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+  //   for(pmi=best_demands[i].path_flow_map.begin();
+  // 	pmi != best_demands[i].path_flow_map.end(); pmi++) {
+  //     std::list<Vertex> path = pmi->first;
+  //     double val = pmi->second;
+  //     std::list<Vertex>::iterator vi, vend;
+  //     std::string spath;
+  //     std::string sdem = std::string(to_string<int>(i+1));
+  //     vi=path.begin();
+  //     spath.append(to_string<int>(*vi + 1));
+  //     vi++;
+  //     for(; vi != path.end(); vi++) {
+  // 	spath.append("|");
+  // 	spath.append(to_string<int>(*vi + 1));
+  //     }
+  //     Rprintf("path=%s\n",spath.c_str());
+  //   }
+  // }
+  
   double scalef = 1.0 / (log(1.0/delta) / log(1+e) );
   rescale_demands_flows(demands,scalef);
   lambda = calcLambda(demands);

@@ -193,7 +193,7 @@ rg.test.member <- function(fid,lid) {
   identical(bitXor(bitAnd(fid,lid),lid) ,ALLZEROS)
 }
 
-
+## THis look wrong! Should it be zero or unit offset?
 rg.assign.lids.to.graph <- function(g,k=7) {
   for(e in 0:(length(E(g))-1) ) {
     ## have to assign a list to an attribute
@@ -210,7 +210,7 @@ rg.assign.lids.to.graph <- function(g,k=7) {
 ### value - vector representing fid
 rg.create.fid <- function(graph,path) {
   fid <- ALLZEROS
-  for(lid in E(g,path=path)$lid) {
+  for(lid in E(graph,path=path)$lid) {
     fid <- bitOr(fid,lid)
   }
   return(fid)

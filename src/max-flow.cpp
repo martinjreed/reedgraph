@@ -415,6 +415,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 					 double e) {
   using namespace std;
   gamma = -DBL_MAX;
+  double best_mean_gamma = -DBL_MAX;
   std::vector<mf_demand>::iterator di;
   for(di=demands.begin(); di != demands.end(); di++) {
     di->flow = 0;
@@ -490,7 +491,6 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
       put(edge_weight,glimit,*ei,0.0);	    
     }
     double local_gamma = DBL_MAX;
-
 
     long count=0;
     std::vector<mf_demand> int_demands(num_dem);
@@ -649,7 +649,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	}
       }
     } else if (count == assigned && gamma < local_gamma) {
-      //Rprintf("found better\n");
+      //Rprintf("found better gamma\n");
       gamma = local_gamma;
       for(int i=0 ; i<num_dem; i++) {
 	best_demands[i].path_flow_map.clear();
@@ -663,7 +663,37 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	  best_demands[i].path_flow_map[path]=val;
 	}
       }
+      
+    } else if (count == assigned && gamma == local_gamma) {
+      //Rprintf("gamma == localgamma\n");
+      // we have the same gamma, let us try to minimize mean gamma
+      double mean_gamma = 0;
+
+      for(tie(ei,eend) = edges(glimit); ei != eend; ei++) {
+	double flow = get(edge_weight,glimit,*ei);
+	double c=get(edge_capacity,glimit,*ei);
+	mean_gamma += (1.0 - flow/c);
+      }
+      mean_gamma = mean_gamma/m;
+      if (best_mean_gamma < mean_gamma ) {
+	//Rprintf("Found better mean gamma %lg %lg\n",best_mean_gamma,mean_gamma);
+	best_mean_gamma = mean_gamma;
+	for(int i=0 ; i<num_dem; i++) {
+	  best_demands[i].path_flow_map.clear();
+	  best_demands[i].flow=0;
+	  std::map<const std::list<Vertex>, double>::iterator pmi, pmend;
+	  for(pmi=int_demands[i].path_flow_map.begin();
+	      pmi != int_demands[i].path_flow_map.end(); pmi++) {
+	    std::list<Vertex> path = pmi->first;
+	    double val = pmi->second;
+	    best_demands[i].flow=val;
+	    best_demands[i].path_flow_map[path]=val;
+	  }
+	}
+	
+      }
     }
+    
     phases++;
     totalphases++;
   }

@@ -22,6 +22,7 @@ require("RBGL",quietly=TRUE,warn.conflicts=FALSE)
 require("genalg",quietly=TRUE)
 require("inlinedocs")
 
+reedgraphEnv <- new.env()
 
 ### This is rather dangerous and discouraged as it erases any state in
 ### the global environment that would mask objects from this

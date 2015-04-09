@@ -123,6 +123,15 @@ rg.bloom.to.binary <- function(val) {
   }
   return(result)
 }
+rg.binary.to.bloom <- function(string) {
+  result <- 0
+  for(i in 1:BLOOMLENGTH) {
+      result <- result *2
+
+    result <- bitOr(result,string[i])
+  }
+  return(result)
+}
 
 ### combinations possible with
 ### k hash functions, m length
@@ -195,7 +204,7 @@ rg.test.member <- function(fid,lid) {
 
 ## THis look wrong! Should it be zero or unit offset?
 rg.assign.lids.to.graph <- function(g,k=7) {
-  for(e in 0:(length(E(g))-1) ) {
+  for(e in 1:(length(E(g))) ) {
     ## have to assign a list to an attribute
     ## cannot assign a vector directly
     E(g)[e]$lid <- list(rg.createLid(k=k))
@@ -215,7 +224,8 @@ rg.create.fid <- function(graph,path) {
   }
   return(fid)
 }
-### Count false postives on a path for given fid
+
+### Count false positives on a path for given fid
 ### input
 ### graph - igraph with lid edge attributes set
 ### path - vector of vertex numbers for path
@@ -226,9 +236,9 @@ rg.create.fid <- function(graph,path) {
 ### tncount - count of true negatives
 ###   ther are no false negatives for LIPSIN
 #### WARNING may be broken, igraph stores the lids as seperate objects not concatonated list
-rg.bloom.false.postive.on.path <- function(graph,path,fid) {
+rg.bloom.false.positive.on.path <- function(graph,path,fid) {
   if(!is.simple(graph)) {
-    cat("Error in rg.bloom.false.postive, not a simple graph\n")
+    cat("Error in rg.bloom.false.positive, not a simple graph\n")
     return(NULL)
   }
   previous <- -1
@@ -237,14 +247,19 @@ rg.bloom.false.postive.on.path <- function(graph,path,fid) {
   tpcount <- 0
   tncount <- 0
   for(nxt in path[2:length(path)]) {
-    n <- neighbors(graph,current)
-    tests <- n[n!=nxt & n!=previous]
-    for(t in tests) {
-      if(rg.test.member(fid,E(graph)[ current %--% t ]$lid[[1]])) {
-        fpcount <- fpcount + 1
-        ##cat("false positive\n")
+      n <- neighbors(graph,current)
+      if(previous==-1) {
+          tests <- n[n!=nxt]
+      } else {
+          tests <- n[n!=nxt & n!=previous]
       }
-      tncount <- tncount + 1
+      for(t in tests) {
+      if(rg.test.member(fid,E(graph)[ current %->% t ]$lid[[1]])) {
+          fpcount <- fpcount + 1
+        ##cat("false positive\n")
+      } else {
+          tncount <- tncount + 1
+      }
     }
     previous <- current
     current <- nxt
@@ -257,47 +272,45 @@ rg.bloom.false.postive.on.path <- function(graph,path,fid) {
   return(count)
 }
 
-### NOT FINISHED
-rg.test.false.postitives.all.paths <- function(graph) {
-  
-  rate <- c(0)
-  count <- c(0)
-  for(i in V(graph)) {
-    paths <- get.shortest.paths(graph,i)
-    for(path in paths) {
-      nelements <- length(path)-1
-      if(length(path)>1){
-        fid <- rg.create.fid(graph,path)
-        
-        pcount <- rg.bloom.false.postive.on.path(graph,path,fid)
-        if(is.na(rate[nelements])) {rate[nelements] <- 0}
-        ## out of all of the non true positives what is the portion
-        ## of false postitives?
-        ## Sum this to running total so that we can create a mean later.
-        rate[nelements] <- rate[nelements] +
-          pcount$fpcount / (pcount$tncount + pcount$fpcount)
-        ## this should not be:
-        pcount$fpcount / (pcount$tpcount + pcount$tncount + pcount$fpcount)
-        if(is.na(count[nelements])) {count[nelements] <- 0}
-        ## the number of counts, saved for later to calculate mean
-        count[nelements] <- count[nelements] + 1
+### Returns the false positive count on each path of length 1 ... diameter
+### also returns true positive count and true negative count
+rg.test.false.positives.all.paths <- function(graph) {
+    
+    fpcount <- c(0)
+    tpcount <- c(0)
+    tncount <- c(0)
+    for(i in V(graph)) {
+        paths <- get.shortest.paths(graph,i)
+        for(path in paths$vpath) {
+            nelements <- length(path)-1
+            if(length(path)>1){
+                fid <- rg.create.fid(graph,path)
+                
+                pcount <- rg.bloom.false.positive.on.path(graph,path,fid)
+                if(is.na(fpcount[nelements])) {fpcount[nelements] <- 0}
+                if(is.na(tpcount[nelements])) {tpcount[nelements] <- 0}
+        if(is.na(tncount[nelements])) {tncount[nelements] <- 0}
+        fpcount[nelements] <- fpcount[nelements] + pcount$fpcount
+        tpcount[nelements] <- tpcount[nelements] + pcount$tpcount
+        tncount[nelements] <- tncount[nelements] + pcount$tncount
       }
     }
+}
+        result <- list()
     
-  }
-  result <- list()
-  result$rate <- rate
-  result$count <- count
+  result$fpcount <- fpcount
+  result$tpcount <- tpcount
+  result$tncount <- tncount
   return(result)
 }
 
-rg.test.false.postitives.loop <- function(graph,k=7) {
+rg.test.false.posititives.loop <- function(graph,k=7) {
   rate <- c(0)
   count <- c(0)
 
   for(i in 1:50) {
     graph <- rg.assign.lids.to.graph(graph,k=k)
-    result <- rg.test.false.postitives.all.paths(graph)
+    result <- rg.test.false.positives.all.paths(graph)
     ## rate or count not long enough make them long
     ## enough and fill missing values with zero
     len <- length(result$rate)

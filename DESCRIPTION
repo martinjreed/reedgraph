@@ -2,7 +2,7 @@ Package: reedgraph
 Type: Package
 Title: Graph routines for Maximum Commodity Flow and other graph
         routines
-Version: 1.43
+Version: 1.44
 Date: 2015-02-11
 Author: Martin J. Reed
 Maintainer: Martin J. Reed <mjreed@essex.ac.uk>

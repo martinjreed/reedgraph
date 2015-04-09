@@ -249,6 +249,17 @@ rg.analyse.tests <- function(res) {
   return(var)
 }
 
+rg.test.diameter <- function() {
+    Size <- seq(100,800,100)
+    Diameter <- c()
+    for(N in Size) {
+        g <- rg.generate.random.graph(N,2,25)
+        Diameter <- c(Diameter,diameter(igraph.from.graphNEL(g)))
+    }
+    res <- data.frame(Size=Size,Diameter=Diameter)
+    return(res)
+}
+
 rg.test.integer.plot <- function(res) {
   ## convert to long format
   resl <- melt(res,measure.vars=c("MF","FF"),variable.name="Algorithm")

@@ -99,6 +99,8 @@ double calcD(Graph_rg& gdual) {
   double sum =0.0;
   graph_traits < Graph_rg >::edge_iterator ei, eend;
   for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
+    // this looks strange, why not just use iterator?
+    // something left from debugging?
     int s = source(*ei,gdual);
     int t = target(*ei,gdual);
     std::pair<Edge, bool> e = edge(vertex(s,gdual),

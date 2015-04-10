@@ -18,17 +18,18 @@
 
 require("bitops")
 
-BLOOMLENGTH <- 256
-BLOOMCHUNKS <- ceiling(BLOOMLENGTH/32)
-ALLZEROS <- rep(0,BLOOMCHUNKS)
+reedgraphEnv <- new.env()
+reedgraphEnv$BLOOMLENGTH <- 256
+reedgraphEnv$BLOOMCHUNKS <- ceiling(reedgraphEnv$BLOOMLENGTH/32)
+reedgraphEnv$ALLZEROS <- rep(0,reedgraphEnv$BLOOMCHUNKS)
 
 ## CAREFUL this library uses a fragile encoding of length.
 ## you must not change the Bloom length and then use variables
 ## that were generated using the old Bloom length
 rg.set.bloomlength <- function(m) {
-  BLOOMLENGTH <<- m
-  BLOOMCHUNKS <<- ceiling(BLOOMLENGTH/32)
-  ALLZEROS <<- rep(0,BLOOMCHUNKS)
+  reedgraphEnv$BLOOMLENGTH <- m
+  reedgraphEnv$BLOOMCHUNKS <- ceiling(reedgraphEnv$BLOOMLENGTH/32)
+  reedgraphEnv$ALLZEROS <<- rep(0,reedgraphEnv$BLOOMCHUNKS)
   
 }
 
@@ -62,7 +63,7 @@ rg.test.exp.bloom.length <- function(m,alpha,beta) {
 
 ## generate a random FID with n elements
 rg.random.fid <-function(n,k=1) {
-  fid <- ALLZEROS
+  fid <- reedgraphEnv$ALLZEROS
   for(i in 1:n) {
     fid <- bitOr(fid,rg.createLid(k))
     #print(rg.bloom.to.binary(fid))
@@ -116,7 +117,7 @@ rg.test.fp.range.k <- function(n,t,k=c(1),a) {
 ### ONLY WRITTEN AS A DEMO, ONLY WORKS FOR BLOOMLENGTH <=32
 rg.bloom.to.binary <- function(val) {
   result <- c()
-  for(i in 1:BLOOMLENGTH) {
+  for(i in 1:reedgraphEnv$BLOOMLENGTH) {
     mybit <- bitAnd(val,1)
     result <- c(mybit,result)
     val <- bitShiftR(val,1)
@@ -125,7 +126,7 @@ rg.bloom.to.binary <- function(val) {
 }
 rg.binary.to.bloom <- function(string) {
   result <- 0
-  for(i in 1:BLOOMLENGTH) {
+  for(i in 1:reedgraphEnv$BLOOMLENGTH) {
       result <- result *2
 
     result <- bitOr(result,string[i])
@@ -176,9 +177,9 @@ rg.bloom.optimum.k <- function(m,n) {
 }
 
 rg.createLid <- function(k=7) {
-  lid <- rep(0,BLOOMCHUNKS)
+  lid <- rep(0,reedgraphEnv$BLOOMCHUNKS)
   ## produce number 0-255 (zero offset)
-  pos <- floor(runif(k) * BLOOMLENGTH)
+  pos <- floor(runif(k) * reedgraphEnv$BLOOMLENGTH)
   ## index in chunks (unit offset)
   ind <- pos %/% 32 +1
   ## set one bit in 0 ... 31
@@ -199,7 +200,7 @@ rg.createLid <- function(k=7) {
 ### it includes.
 ### returns - TRUE or FALSE as expected
 rg.test.member <- function(fid,lid) {
-  identical(bitXor(bitAnd(fid,lid),lid) ,ALLZEROS)
+  identical(bitXor(bitAnd(fid,lid),lid) ,reedgraphEnv$ALLZEROS)
 }
 
 ## THis look wrong! Should it be zero or unit offset?
@@ -218,7 +219,7 @@ rg.assign.lids.to.graph <- function(g,k=7) {
 ### graph - igraph
 ### value - vector representing fid
 rg.create.fid <- function(graph,path) {
-  fid <- ALLZEROS
+  fid <- reedgraphEnv$ALLZEROS
   for(lid in E(graph,path=path)$lid) {
     fid <- bitOr(fid,lid)
   }
@@ -326,7 +327,7 @@ rg.test.false.posititives.loop <- function(graph,k=7) {
   count[is.na(count)] <- 0
   rate[is.na(rate)] <- 0
   range <- 1:length(count)
-  bounds <- mapply(rg.bloom.false,k,BLOOMLENGTH,range)
+  bounds <- mapply(rg.bloom.false,k,reedgraphEnv$BLOOMLENGTH,range)
   ## calculate mean rate from all results.
   result <- data.frame(N=range,Count=count,Rate=rate/count,Lower=bounds[1,],
                        Upper=bounds[2,])

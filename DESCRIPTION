@@ -3,7 +3,7 @@ Type: Package
 Title: Graph routines for Maximum Commodity Flow and other graph
         routines
 Version: 1.46
-Date: 2015-02-11
+Date: 2015-04-10
 Author: Martin J. Reed
 Maintainer: Martin J. Reed <mjreed@essex.ac.uk>
 Description: Graph routines for Maximum Commodity Flow and other miscellaneous graph routines

@@ -1007,9 +1007,10 @@ rg.minimum.congestion.flow.c <- function(g,
   res$gamma <- rg.mcf.find.gamma(gflow)
 
 
-  beta <- calcBeta(demands,gdual)
-  
-  lambda <- calcLambda(demands)
+  ##beta <- calcBeta(demands,gdual)
+  beta <- retlist$beta
+  ##lambda <- calcLambda(demands)
+  lambda <- retlist$lambda
   foundratio <- beta / lambda
   ratiobound <- (1-e)^-3
 

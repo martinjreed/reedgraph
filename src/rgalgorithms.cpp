@@ -1774,6 +1774,8 @@ SEXP rg_min_congestion_flow(SEXP Rcapacities,
   Rcpp::List retlist;
   retlist.push_back(retdemandsi,"demands");
   retlist.push_back(g.totalphases,"totalphases");
+  retlist.push_back(g.lambda,"lambda");
+  retlist.push_back(g.beta,"beta");
   retlist.push_back(lengths,"lengths");
   
   return wrap(retlist);
@@ -1862,6 +1864,8 @@ SEXP rg_min_congestion_flow_int(SEXP Rcapacities,
   Rcpp::List retlist;
   retlist.push_back(retdemandsi,"demands");
   retlist.push_back(g.totalphases,"totalphases");
+  retlist.push_back(g.lambda,"lambda");
+  retlist.push_back(g.beta,"beta");
   retlist.push_back(lengths,"lengths");
   
   return wrap(retlist);

@@ -588,9 +588,9 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	w = w * (1 + (e * mincap) / c);
 	put(edge_weight,gdual,ed.first,w);
 	double flow = get(edge_weight,glimit,el.first);
-	put(edge_weight,glimit,el.first,flow+mincap);
+	put(edge_weight,glimit,el.first,flow+unscaledDemand.demand);
 	// This bit will capture the gamma as we go through the edges
-	double tmpGamma = 1.0 - (flow+mincap)/c;
+	double tmpGamma = 1.0 - (flow+unscaledDemand.demand)/c;
 	if ( local_gamma > tmpGamma )
 	  local_gamma = tmpGamma;
 	//Rprintf("edge %ld|%ld flow:%lg+%lg\n",p,f,flow,mincap);
@@ -609,9 +609,9 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	  w = w * (1 + (e * mincap) / c);
 	  put(edge_weight,gdual,ed.first,w);
 	  flow = get(edge_weight,glimit,el.first);
-	  put(edge_weight,glimit,el.first,flow+mincap);
+	  put(edge_weight,glimit,el.first,flow+unscaledDemand.demand);
 	  // This bit will capture the gamma as we go through the edges
-	  double tmpGamma = 1.0 - (flow+mincap)/c;
+	  double tmpGamma = 1.0 - (flow+unscaledDemand.demand)/c;
 	  if ( local_gamma > tmpGamma )
 	    local_gamma = tmpGamma;
 	  //Rprintf("edge %ld|%ld flow:%lg+%lg\n",p,f,flow,mincap);
@@ -627,7 +627,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 	  demands[i].path_flow_map[path] += mincap;
 	}
 	int_demands[i].path_flow_map.clear();
-	int_demands[i].path_flow_map[path] = mincap;
+	int_demands[i].path_flow_map[path] = unscaledDemand.demand;
 	int_demands[i].flow = mincap;
 
 	demands[i].flow += mincap;

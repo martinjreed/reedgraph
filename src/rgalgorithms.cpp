@@ -62,7 +62,7 @@ int updateExplicitFlow(rg_demand& demand,
   rgVertex f,p;
   rgVertex source = demand.source;
   rgVertex sink = demand.sink;
-  int newflows=0;
+  //int newflows=0;
   int newpath=0;
 	
   // note this records the path backwards! (slightly faster
@@ -331,7 +331,7 @@ SEXP rg_max_concurrent_flow_capacity_restricted_c
     pathflows[i] = std::vector<double>(paths[i].size(),0.0);
   }
 
-  int doubleCount=0;
+  //int doubleCount=0;
   int phases=0;
   int totalphases=0;
 
@@ -474,7 +474,7 @@ SEXP rg_fleischer_max_concurrent_flow_restricted_c
     pathflows[i] = std::vector<double>(paths[i].size(),0.0);
   }
 
-  int doubleCount=0;
+  //int doubleCount=0;
   int phases=0;
   int totalphases=0;
 
@@ -685,7 +685,7 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   int N = num_vertices(gdual);
   int m = num_edges(gdual);
   double e = Rcpp::as<double>(Re);
-  int num_dem_ed_flows =0;
+  //int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
 
@@ -733,9 +733,9 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   char cmd[256];
   //ansxp = Rf_eval(cmdexpr,env);
 
-  double a = pow(2.0,-130);
-  double b =1;
-  double c = a +b;
+  //double a = pow(2.0,-130);
+  //double b =1;
+  //double c = a +b;
 
   std::vector<int> demand_index(num_dem);
   if(permutation[0] >= 0) {
@@ -849,7 +849,7 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
 #endif
 	  ed = edge(p,f,gdual);
 	  double cap =get(edge_capacity,gdual,ed.first);
-	  double w =get(edge_weight,gdual,ed.first);
+	  //double w =get(edge_weight,gdual,ed.first);
 	  mincap = cap < mincap? cap : mincap;
 	  f = p;
 	  p = penult[p];
@@ -982,8 +982,8 @@ SEXP rg_fleischer_max_concurrent_flow_c(SEXP num_verts_in,
   }
 
   int i=0;
-  int j=0;
-  int k=0;
+  //int j=0;
+  //int k=0;
   int l=0;
   int n=0;
   for(vi=demands.begin(); vi < demands.end(); vi++, i++) {
@@ -1073,7 +1073,7 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   int N = num_vertices(gdual);
   int m = num_edges(gdual);
   double e = Rcpp::as<double>(Re);
-  int num_dem_ed_flows =0;
+  //int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
 
@@ -1121,9 +1121,9 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   char cmd[256];
   //ansxp = Rf_eval(cmdexpr,env);
 
-  double a = pow(2.0,-130);
-  double b =1;
-  double c = a +b;
+  //double a = pow(2.0,-130);
+  //double b =1;
+  //double c = a +b;
 
   std::vector<int> demand_index(num_dem);
   if(permutation[0] >= 0) {
@@ -1237,7 +1237,7 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
 #endif
 	  ed = edge(p,f,gdual);
 	  double cap =get(edge_capacity,gdual,ed.first);
-	  double w =get(edge_weight,gdual,ed.first);
+	  //double w =get(edge_weight,gdual,ed.first);
 	  mincap = cap < mincap? cap : mincap;
 	  f = p;
 	  p = penult[p];
@@ -1370,8 +1370,8 @@ SEXP rg_karakostas_max_concurrent_flow_c(SEXP num_verts_in,
   }
 
   int i=0;
-  int j=0;
-  int k=0;
+  //int j=0;
+  //int k=0;
   int l=0;
   int n=0;
   for(vi=demands.begin(); vi < demands.end(); vi++, i++) {
@@ -1476,7 +1476,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_prescaled(SEXP Rcapacities,
     for(pmi=demands[i].path_flow_map.begin();
 	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::list<Vertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::list<Vertex>::iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -1564,7 +1564,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_new(SEXP Rcapacities,
     for(pmi=demands[i].path_flow_map.begin();
 	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::list<Vertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::list<Vertex>::iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -1658,7 +1658,7 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
     for(pmi=best_demands[i].path_flow_map.begin();
 	pmi != best_demands[i].path_flow_map.end(); pmi++) {
       std::list<Vertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::list<Vertex>::iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -1751,7 +1751,7 @@ SEXP rg_min_congestion_flow(SEXP Rcapacities,
     for(pmi=demands[i].path_flow_map.begin();
 	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::list<Vertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::list<Vertex>::iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -1839,7 +1839,7 @@ SEXP rg_min_congestion_flow_int(SEXP Rcapacities,
     for(pmi=demands[i].path_flow_map.begin();
 	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::list<Vertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::list<Vertex>::iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -1921,7 +1921,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
 
 
   double e = Rcpp::as<double>(Re);
-  int num_dem_ed_flows =0;
+  //int num_dem_ed_flows =0;
   int num_dem_p_flows =0;
   double delta = pow(double(m) / (1.0 - e),-1.0/e) * deltaf;
 
@@ -1961,9 +1961,9 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
   char cmd[256];
   //ansxp = Rf_eval(cmdexpr,env);
 
-  double a = pow(2.0,-130);
-  double b =1;
-  double c = a +b;
+  //double a = pow(2.0,-130);
+  //double b =1;
+  //double c = a +b;
 
   std::vector<int> demand_index(num_dem);
   if(permutation[0] >= 0) {
@@ -2073,7 +2073,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
 	  ed = edge(p,f,gdual);
 
 	  double cap =get(edge_capacity,gdual,ed.first);
-	  double w =get(edge_weight,gdual,ed.first);
+	  //double w =get(edge_weight,gdual,ed.first);
 	  mincap = cap < mincap? cap : mincap;
 	  f = p;
 	  p = penult[p];
@@ -2158,7 +2158,7 @@ SEXP rg_fleischer_max_concurrent_flow_c_boost(SEXP num_verts_in,
     for(pmi=demands[i].path_flow_map.begin();
 	pmi != demands[i].path_flow_map.end(); pmi++) {
       std::vector<rgVertex> path = pmi->first;
-      double val = pmi->second;
+      //double val = pmi->second;
       std::vector<rgVertex>::reverse_iterator vi, vend;
       std::string spath;
       std::string sdem = std::string(to_string<int>(i+1));
@@ -2337,9 +2337,9 @@ SEXP rg_max_concurrent_flow_int_c
     pathflows[i] = std::vector<double>(paths[i].size(),0.0);
   }
 
-  int doubleCount=0;
+  //int doubleCount=0;
   int phases=0;
-  int phases2=0;
+  //int phases2=0;
   int totalphases=0;
 
   double delta = pow(double(M) / (1.0 - e),-1.0/e) * deltaf;
@@ -2382,18 +2382,18 @@ SEXP rg_max_concurrent_flow_int_c
   }
 
   std::vector<int> bestpaths;
-  bool gammanormal=true;
-  bool gammaindividual=false;//true;
-  bool gammajustgamma=false;//true;
+  //bool gammanormal=true;
+  //bool gammaindividual=false;//true;
+  //bool gammajustgamma=false;//true;
   // set to iteratively sort order from remaining demands in each step
   // must be set to false unless using permutation "less" (option -2)
   // suggest always leave false here and set to true below if needed
   bool sort_order=false;
   std::vector<int> countunderv(1);
 
-  int countnormal=0;
-  int countindividual=0;
-  int countjustgamma=0;
+  //int countnormal=0;
+  //int countindividual=0;
+  //int countjustgamma=0;
 
   countunderv[0]=0;
 
@@ -2908,7 +2908,7 @@ SEXP rg_test_every_path_inner
   //Rprintf(" end \n");
   //Rprintf("best gamma %lg\n",bestgamma);
   Rcpp::List retlist;
-  int var=0;
+  //int var=0;
   retlist.push_back(pathptrs,"pathptrs");
   retlist.push_back(gammas,"gammas");
   return Rcpp::wrap(retlist);

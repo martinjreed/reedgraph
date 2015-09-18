@@ -49,8 +49,8 @@ inline double Graph_mf::calcD() {
   for(tie(ei,eend) = edges(gdual); ei != eend; ei++) {
     double l = get(edge_weight,gdual,*ei);
     double c = get(edge_capacity,gdual,*ei);
-    int s = source(*ei,gdual);
-    int t = target(*ei,gdual);
+    //int s = source(*ei,gdual);
+    //int t = target(*ei,gdual);
     //Rprintf("%ld -> %ld, %lg, %lg\n",s,t,l,c);
     sum += l*c;
   }
@@ -60,8 +60,8 @@ inline double Graph_mf::calcD() {
 double Graph_mf::assign_gflow(std::vector<mf_demand> &demands) {
   graph_traits < NetGraph >::edge_iterator ei, eend;
   for(tie(ei,eend) = edges(gflow); ei != eend; ei++) {
-    int s = source(*ei,gflow);
-    int t = target(*ei,gflow);
+    //int s = source(*ei,gflow);
+    //int t = target(*ei,gflow);
     //Rprintf("%ld -> %ld\n",s,t);
     put(edge_weight,gflow,*ei,0.0);
   }
@@ -414,13 +414,15 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 					 std::vector<mf_demand> &best_demands,
 					 double e) {
   using namespace std;
+  std::vector<mf_demand> unscaledDemands = demands;
+
   gamma = -DBL_MAX;
   double best_mean_gamma = -DBL_MAX;
-  std::vector<mf_demand>::iterator di;
-  for(di=demands.begin(); di != demands.end(); di++) {
-    di->flow = 0;
-    di->path_flow_map.erase(di->path_flow_map.begin(),di->path_flow_map.end());
-  }
+  // std::vector<mf_demand>::iterator di;
+  // for(di=demands.begin(); di != demands.end(); di++) {
+  //   di->flow = 0;
+  //   di->path_flow_map.erase(di->path_flow_map.begin(),di->path_flow_map.end());
+  // }
   assigned = 0;
   int num_dem = demands.size();
   
@@ -432,6 +434,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
   boost::copy_graph((NetGraph)*this,gdual);
   for(int i=0 ; i<num_dem; i++) {
     demands[i].flow = 0;
+    unscaledDemands[i].flow=0;
   }
   int N = num_vertices(*this);
   int m = num_edges(*this);
@@ -499,6 +502,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
       int_demands[i].path_flow_map.clear();
       int_demands[i].flow = 0;
       mf_demand demand=demands[i];
+      mf_demand unscaledDemand=unscaledDemands[i];
       Vertex vsource = demand.source;
       Vertex vsink = demand.sink;
       Vertex f,p;
@@ -521,7 +525,7 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
 					  vertex(t,glimit),glimit);
 	  double w = get(edge_weight,glimit,et.first);
 	  //Rprintf("%ld->%ld edge weight=%lg, for cap %lg, dem %lg\n",s,t,w,c,demand.demand);
-	  if(c-w < demand.demand) {
+	  if(c-w < unscaledDemand.demand) {
 	    //Rprintf("%ld->%ld set to inf\n",s,t);
 	    put(edge_weight,gtmp,ed.first,DBL_MAX);	    
 	  }

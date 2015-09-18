@@ -27,13 +27,16 @@ reedgraphEnv$ALLZEROS <- rep(0,reedgraphEnv$BLOOMCHUNKS)
 ## you must not change the Bloom length and then use variables
 ## that were generated using the old Bloom length
 rg.set.bloomlength <- function(m) {
+    unlockBinding("BLOOMLENGTH",reedgraphEnv)
+    unlockBinding("BLOOMCHUNKS",reedgraphEnv)
+    unlockBinding("ALLZEROS",reedgraphEnv)
   reedgraphEnv$BLOOMLENGTH <- m
   reedgraphEnv$BLOOMCHUNKS <- ceiling(reedgraphEnv$BLOOMLENGTH/32)
-  reedgraphEnv$ALLZEROS <<- rep(0,reedgraphEnv$BLOOMCHUNKS)
+  reedgraphEnv$ALLZEROS <- rep(0,reedgraphEnv$BLOOMCHUNKS)
   
 }
 
-rg.prob.false.free <- function(m,alpha,beta) {
+Rg.prob.false.free <- function(m,alpha,beta) {
   return((1-0.618503^(m/alpha))^beta)
 }
 

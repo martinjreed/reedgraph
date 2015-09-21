@@ -67,11 +67,15 @@ public:
     }
   } 
   void max_concurrent_flow(std::vector<mf_demand> &demands,
-		      double e=0.1);
+			   double e=0.1);
 
-  void max_concurrent_flow_int(std::vector<mf_demand> &demands,
+  void max_concurrent_flow_int_prescaled(std::vector<mf_demand> &demands,
+					 std::vector<mf_demand> &best_demands,
+					 double e=0.1);
+  void max_concurrent_flow_int(std::vector<mf_demand> &unscaledDemands,
+			       std::vector<mf_demand> &demands,
 			       std::vector<mf_demand> &best_demands,
-				 double e=0.1);
+			        double e=0.1);
   void sp_concurrent_flow(std::vector<mf_demand> &demands);
 
   void max_concurrent_flow_prescaled(std::vector<mf_demand> &demands,

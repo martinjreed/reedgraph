@@ -814,7 +814,8 @@ rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent F
  updateflow=TRUE, ##< update the flow
  progress=FALSE, ##< display progress bar (not working in latest version)
  permutation="random", ##< only random in this version
- deltaf=1.0 ##< not used in this version
+ deltaf=1.0, ##< not used in this version
+ prescaled=TRUE ## scaling linear demands for faster run-time
  ) {
     
     nodelabels <- nodes(g)
@@ -840,7 +841,8 @@ rg.max.concurrent.flow.int <- function # Integer minimum congestion concurrent F
                    as.integer(demands.sources -1 ),
                    as.integer(demands.sinks -1),
                    as.double(demands.demand),
-                   as.double(e)
+                   as.double(e),
+                   prescaled
                  )
 
   demands <- retlist$demands

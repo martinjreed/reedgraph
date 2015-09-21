@@ -2312,3 +2312,56 @@ dice <- function(n) {
   x <- x[ 1 <= x & x <=6]
   return(x)
 }
+
+### testing prescaled rg.max.concurrent.flow.int Ran this 20150920 -
+### it showed that the prescaled is much faster (mainly for high
+### lambda) for very similar quality. Gamma was the same. They both
+### had slightly different number of blocked demands when lambda was
+### low (lambda<1.0). On average (over 50 results with blocking) the
+### ratio of (prescaled-nonscaled)/prescaled was 0.014 (ie nonscaled
+### performed very slightly better but there was only 1% in it,
+### sometimes nonscaled was better), this was not a statistically
+### significant result (p-value 0.08)
+rg.max.concurrent.flow.int.test <- function() {
+    Nrange <- seq(10,100,10)
+    results <<- data.frame(N=numeric(),
+                          Lambda=numeric(),
+                          Blocked=numeric(),
+                          Gamma=numeric(),
+                          Runtime=numeric(),
+                          Type=character())
+    for(N in Nrange) {
+        g <- rg.generate.random.graph(N)
+        demands <- rg.gen.demands(g,val=round(runif(5,1,4)))
+        numDemands <- length(demands)
+        g <- rg.set.capacity(g,1)
+        linres <- rg.minimum.congestion.flow(g,demands)
+        ##linres <- rg.minimum.congestion.flow(g,demands)
+        scales <- seq(0.1,2.0,0.2)*linres$lambda
+        for(scale in scales) {
+            scaled <- rg.rescale.demands(demands,scale)
+            timing <- system.time(res <- rg.max.concurrent.flow.int(g,scaled))
+            blocked <- numDemands - rg.count.accepted.demands(res$demands)
+            interim <- data.frame(N=N,
+                                  Lambda=res$lambda,
+                                  Gamma=res$gamma,
+                                  Blocked=blocked,
+                                  Runtime=timing[["user.self"]],
+                                  Type="Prescaled")
+            print(interim)
+            results <<- rbind(results,interim)
+            timing <- system.time(res <- rg.max.concurrent.flow.int(g,scaled,
+                                                                    prescaled=FALSE))
+            blocked <- numDemands - rg.count.accepted.demands(res$demands)
+            interim <- data.frame(N=N,
+                                  Lambda=res$lambda,
+                                  Gamma=res$gamma,
+                                  Blocked=blocked,
+                                  Runtime=timing[["user.self"]],
+                                  Type="NoScaling")
+            print(interim)
+            results <<- rbind(results,interim)
+        }
+    }
+    return(results)
+}

@@ -409,13 +409,40 @@ void Graph_mf::  max_concurrent_flow(std::vector<mf_demand> &demands,
   
 }
 
+void Graph_mf::max_concurrent_flow_int_prescaled(std::vector<mf_demand> &demands,
+						 std::vector<mf_demand> &best_demands,
+						 double e) {
+  std::vector<mf_demand> unscaledDemands = demands;
+  long num_dem=demands.size();
+  sp_concurrent_flow(demands);
+  rescale_demands(demands,lambda);
+  // Beta might be very high so obtain 2-approximate solution
+  // (1+w) = 2 = (1-e)^-3
+  double e2= 1- pow(2.0,-1.0/3.0);
+  max_concurrent_flow(demands,e2);
+  //rescale_demands(demands,beta/2);
+  rescale_demands(demands,beta*2);
+  max_concurrent_flow_int(unscaledDemands,demands,best_demands,e);
+  for(int i=0; i<num_dem; i++) {
+    demands[i].demand = unscaledDemands[i].demand;
+  }
+  // calcLambda calculates gamma, but this is incorrect if prescaling, so
+  // instead keep the value we had found in the algorithm.
+  double saveGamma = gamma;
+  lambda = calcLambda(demands);
+  gamma = saveGamma;
+  //Rprintf("lambda=%lg\n",lambda);
+  beta = calcBeta(demands);
+  //Rprintf("beta=%lg\n",beta);
+  //assign_gflow(demands);
 
-void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
+}
+
+void Graph_mf::max_concurrent_flow_int(std::vector<mf_demand> &unscaledDemands,
+					 std::vector<mf_demand> &demands,
 					 std::vector<mf_demand> &best_demands,
 					 double e) {
   using namespace std;
-  std::vector<mf_demand> unscaledDemands = demands;
-
   gamma = -DBL_MAX;
   double best_mean_gamma = -DBL_MAX;
   // std::vector<mf_demand>::iterator di;
@@ -425,8 +452,6 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
   // }
   assigned = 0;
   int num_dem = demands.size();
-  
-
 
   gflow.clear();
   boost::copy_graph((NetGraph)*this,gflow);
@@ -705,7 +730,6 @@ void Graph_mf::  max_concurrent_flow_int(std::vector<mf_demand> &demands,
   // for(int i=0 ; i<num_dem; i++) {
   //   Rprintf("Demand %ld flow=%lg\n",i+1,best_demands[i].flow);
   // }
-  
   double scalef = 1.0 / (log(1.0/delta) / log(1+e) );
   rescale_demands_flows(demands,scalef);
   lambda = calcLambda(demands);

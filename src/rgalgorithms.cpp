@@ -1599,7 +1599,8 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
 			     SEXP Rdemand_sources,
 			     SEXP Rdemand_sinks,
 			     SEXP Rdemands_demand,
-			     SEXP Re
+			     SEXP Re,
+			     SEXP Rprescaled
 			     ) {
   std::vector<double> capacities = Rcpp::as< std::vector<double> > (Rcapacities);
   std::vector<int> edges = Rcpp::as< std::vector<int> > (Redges);
@@ -1612,6 +1613,7 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
   double e = Rcpp::as<double> (Re); 
   Graph_mf g(num_vertices,edges,capacities);
 
+  bool prescaled = Rcpp::as< bool > (Rprescaled);
   std::vector<mf_demand> demands(num_demands);
   std::vector<mf_demand> best_demands(num_demands);
   for(int i=0 ; i<num_demands; i++) {
@@ -1625,8 +1627,10 @@ SEXP max_concurrent_flow_int(SEXP Rcapacities,
     best_demands[i].sink = vertex(demand_sinks[i],g);
   }
 
-  g.max_concurrent_flow_int(demands,best_demands,e);
-  
+  if(prescaled)
+    g.max_concurrent_flow_int_prescaled(demands,best_demands,e);
+  else
+    g.max_concurrent_flow_int(demands,demands,best_demands,e);
     
   // setup return to R
   std::vector<double> lengths(m);

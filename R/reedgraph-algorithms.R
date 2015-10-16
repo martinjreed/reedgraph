@@ -1852,8 +1852,8 @@ rtrunc <- function(n, spec, a = -Inf, b = Inf, ...)
 ### Generate a random graph with a range of node degree
 ### uses igraph routines
 ### n - number of nodes
-### mindeg - minimum node degree default = 3
-### maxdeg - maximum node degree default = 7
+### mindeg - minimum node degree default = 2
+### maxdeg - maximum node degree default = 20
 ### dist - the name of the distrubution for the outdegree
 ### dist1 - the first parameter used by dist
 ### dist2 - the second parameter used by dist
@@ -1867,7 +1867,10 @@ rg.generate.random.graph <- function(n=10,mindeg=2,maxdeg=20,
   ## note this needs a bit more work - not quite right
   ## as the truncation gives an error - but good enough
   ## for generating some "random" graphs
-  degrees <- floor(rtrunc(n,dist,a=mindeg,b=maxdeg,dist1,dist2))
+  if(maxdeg==Inf)
+      degrees <- ceiling(dist(n,dist1,dist2))
+  else
+      degrees <- floor(rtrunc(n,dist,a=mindeg,b=maxdeg,dist1,dist2))
 
   ## note sum(degrees) has to be even, add one to smallest
   ## node degree of first node found.

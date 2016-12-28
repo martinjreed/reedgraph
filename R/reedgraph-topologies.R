@@ -17,6 +17,53 @@
 ###    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
+## For GraphNEL add extra nodes to give single link
+## fanout of order n (n is in addition to any other
+## links that connect to other nodes)
+rg.addFanOut <- function # Augment graphNEL with fanout
+(g, ##<< graphNEL to augment
+    n=2 ##<< fanout at each node
+) 
+{
+    startindex <- length(nodes(g)) + 1
+    for(d in nodes(g)) {
+        if(length(edges(g)[[d]])==1)
+            ## then this is already a fanout node so
+            next
+        ##print(d)
+        ## count the number of single ended links
+        count <- n - sum(lengths(edges(g)[edges(g)[[d]]])==1)
+        if(count > 0)
+            for(i in 1:count) {
+                ##cat("adding node ",as.character(startindex),"to",d,"\n")
+                g <- addNode(as.character(startindex),
+                             g,edges=list(d))
+                ##cat("adding edge from",as.character(d),"to",
+                ##    as.character(startindex),"\n")
+                g <- addEdge(from=as.character(d),to=as.character(startindex),g)
+                startindex <- startindex +1
+            }
+    }
+    ##value<< Returns a new graphNEL with augmented fanout
+    return(g)
+}
+
+## generate a fully connected core graphNEL as directed graph
+## 
+rg.generate.connected.core <- function ##generate a fully connected core graphNEL
+(n=4 ##<< the number of core nodes to interconnect
+) {
+    V <- as.character(1:n)
+    edL1 <- vector("list",length=n)
+    names(edL1) <- V
+    for(i in 1:n)
+        edL1[[i]] <- list(edges=V[V!=i])
+    ##value<< new graphNEL as fully connected core
+    g <- graphNEL(nodes=V,edgeL=edL1,edgemode='directed')
+    
+}
+
+
 
 ### Creates a list with Latitude and Longitude infrormation from
 ### Toplogy Zoo data in igraph format

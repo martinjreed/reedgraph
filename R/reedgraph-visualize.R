@@ -20,6 +20,24 @@
 require(tcltk,quietly=TRUE)
 require(igraph,quietly=TRUE)
 require("graph",quietly=TRUE,warn.conflicts=FALSE)
+require("networkD3",quietly=TRUE)
+
+## display graph using html forceNetwork
+rg.forceNetwork <- function ## display graph using html forceNetwork
+(g ##<< an igraph or graphNEL object
+) {
+    if(! is.igraph(g))
+        g <- igraph.from.graphNEL(g)
+    wc <- cluster_walktrap(g)
+    members <- membership(wc)
+    gd3 <- igraph_to_networkD3(g,group=members)
+    forceNetwork(Links = gd3$links, Nodes = gd3$nodes,
+                 Source = 'source', Target = 'target', NodeID = 'name',
+                 Group = 'group',
+                 zoom=TRUE,
+                 legend=FALSE)
+    ##value<< a value returned from forceNetwork, either print or return
+}
 
 
 rg.show.paths <- function(demands,numlist=NULL) {

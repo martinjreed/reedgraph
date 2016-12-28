@@ -36,7 +36,7 @@ rg.set.bloomlength <- function(m) {
   
 }
 
-Rg.prob.false.free <- function(m,alpha,beta) {
+rg.prob.false.free <- function(m,alpha,beta) {
   return((1-0.618503^(m/alpha))^beta)
 }
 
@@ -117,16 +117,18 @@ rg.test.fp.range.k <- function(n,t,k=c(1),a) {
 }
 
 ### Function to print binary pattern.
-### ONLY WRITTEN AS A DEMO, ONLY WORKS FOR BLOOMLENGTH <=32
 rg.bloom.to.binary <- function(val) {
-  result <- c()
-  for(i in 1:reedgraphEnv$BLOOMLENGTH) {
-    mybit <- bitAnd(val,1)
-    result <- c(mybit,result)
-    val <- bitShiftR(val,1)
-  }
-  return(result)
+    
+    result <- c()
+    for(i in 1:reedgraphEnv$BLOOMLENGTH) {
+        ind <- (i-1) %/% 32  + 1
+        mybit <- bitAnd(val[ind],1)
+        result <- c(mybit,result)
+        val[ind] <- bitShiftR(val[ind],1)
+    }
+    return(rev(result))
 }
+
 rg.binary.to.bloom <- function(string) {
   result <- 0
   for(i in 1:reedgraphEnv$BLOOMLENGTH) {
@@ -179,16 +181,20 @@ rg.bloom.optimum.k <- function(m,n) {
   return(log(2) * m /n)
 }
 
-rg.createLid <- function(k=7) {
+rg.createLid <- function(k=7,pos=NULL) {
   lid <- rep(0,reedgraphEnv$BLOOMCHUNKS)
   ## produce number 0-255 (zero offset)
-  pos <- floor(runif(k) * reedgraphEnv$BLOOMLENGTH)
+  if(is.null(pos)) {
+      pos <- floor(runif(k) * reedgraphEnv$BLOOMLENGTH)
+  } else
+      pos <- pos - 1
   ## index in chunks (unit offset)
+  ## note integer division here (not modulus, easy to miss / in %/%)
   ind <- pos %/% 32 +1
   ## set one bit in 0 ... 31
   val <- 2^((pos) %% 32)
   ## add to existing 
-  for(i in 1:k) {
+  for(i in 1:length(val)) {
     lid[ind[i]] <- bitOr(lid[ind[i]],val[i])
   }
   return(lid)
@@ -206,7 +212,7 @@ rg.test.member <- function(fid,lid) {
   identical(bitXor(bitAnd(fid,lid),lid) ,reedgraphEnv$ALLZEROS)
 }
 
-## THis look wrong! Should it be zero or unit offset?
+## assigns the LIDs randomly
 rg.assign.lids.to.graph <- function(g,k=7) {
   for(e in 1:(length(E(g))) ) {
     ## have to assign a list to an attribute
@@ -232,7 +238,7 @@ rg.create.fid <- function(graph,path) {
 ### Count false positives on a path for given fid
 ### input
 ### graph - igraph with lid edge attributes set
-### path - vector of vertex numbers for path
+### path - vector of vertex pairs for path
 ### fid - Bloom filter made up from lids on path
 ### returns list
 ### fpcount - count of false postives
@@ -276,7 +282,7 @@ rg.bloom.false.positive.on.path <- function(graph,path,fid) {
   return(count)
 }
 
-### Returns the false positive count on each path of length 1 ... diameter
+### Returns the false positive count on each unicast path of length 1 ... diameter
 ### also returns true positive count and true negative count
 rg.test.false.positives.all.paths <- function(graph) {
     

@@ -305,6 +305,7 @@ void Graph_mf::  max_concurrent_flow(std::vector<mf_demand> &demands,
 
   // phases
   while(D < 1.0) {
+    //Rprintf("D %lg \n",D);
     // this doubling could be included but it needs "undoubling" for
     // demands and flows at the end if prescaling is done this should
     // not be necessary

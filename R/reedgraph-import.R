@@ -23,7 +23,7 @@ require("igraph",quietly=TRUE)
 ### path directory to search for files, (default is harcoded to a place on my system)
 ### Make sure path is not relative to "~" in Mac as it fails!
 ### returns list of names as keys each element is a graph in igraph format
-rg.import.multi.gml <- function(path="/Users/mjreed/main/R/topologies/internet-toplogy-zoo/") {
+rg.import.multi.gml <- function(path="~/main/R/topologies/internet-toplogy-zoo/") {
   files <- list.files(path,pattern="\\.gml",recursive=TRUE)
 
   graphs <- list()

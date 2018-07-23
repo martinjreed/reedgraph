@@ -1736,10 +1736,14 @@ rg.max.concurrent.flow.rescale.demands.flow <- function(demands,scalef) {
   demands
 }
 
-rg.rescale.demands <- function(demands,scalef) {
+rg.rescale.demands <- function(demands,scalef,integer=FALSE) {
 
   for(dn in names(demands)) {
-    demands[[dn]]$demand <- demands[[dn]]$demand * scalef
+    if(integer) {
+      demands[[dn]]$demand <- round(demands[[dn]]$demand * scalef)
+    } else {
+      demands[[dn]]$demand <- demands[[dn]]$demand * scalef
+    }
   }
   demands
 }

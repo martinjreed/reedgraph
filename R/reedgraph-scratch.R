@@ -1,3 +1,5 @@
+library(doParallel)
+registerDoParallel(cores=(detectCores()-1))
 
 ###    Copyright (C) 2012 Martin J Reed              martin@reednet.org.uk
 ###    University of Essex, Colchester, UK
@@ -652,6 +654,112 @@ rg.run.tests.process.maxflow <- function(dirname) {
                         )
 }
 
+rg.demands.to.csv <- function(demands,file,paths=TRUE) {
+  cat("",file=file)
+  if(paths) {
+    for(i in demands) {
+      for(j in names(i$paths)) {
+        cat(i$paths[[j]],",",gsub("\\|",",",j),"\n",sep="",file=file,append=TRUE)
+      }
+    }
+  } else {
+    for(i in demands) {
+        cat(i$demand,",",i$source,",",i$sink,"\n",sep="",file=file,append=TRUE)
+    }
+  }
+}
+
+rg.smart.round <- function(x) {
+  y <- floor(x)
+  indices <- tail(order(x-y), round(sum(x)) - sum(y))
+  y[indices] <- y[indices] + 1
+  y
+}
+
+
+rg.karcius.run.all <- function(gnames=NULL,targets=NULL,zoo=zoo,dir="./",incomm=NULL,progress=FALSE,e=0.1) {
+  g <- NULL
+  for(gname in gnames) {
+    if(gname == "lattice") {
+      g <- NULL
+      gi <- make_lattice(c(2,3))
+      g <- igraph.to.graphNEL(as.directed(gi))
+    } else {
+      gi <- zoo[[gname]]
+      g <- igraph.to.graphNEL(as.directed(simplify(gi)))
+    }
+    N <- length(nodes(g))
+    if(is.null(incomm)) {
+      comm <- rg.gen.demands(g,val=10*rlnorm(N*N,16,1)/exp(16.5))
+    } else {
+      comm <- incomm
+    }
+    foreach(target=targets) %dopar% {
+      #for(target in targets){
+      network.name <- paste0(dir,gname,"-",as.character(target))
+      cat(network.name,"\n")
+      results <- rg.karcius(g=g,comm=comm,network.name=network.name,target=target,e=e,progress=progress)
+    }
+  }
+}
+
+rg.karcius <- function(g=NULL,comm=NULL,dir="./",network.name="unknown-net",target=0.3,e=0.1,progress=FALSE) {
+  N <- length(nodes(g))
+  g <- rg.set.capacity(g,10000)
+  #comm <- rg.gen.demands(g,val=10)
+  g <- rg.set.weight(g,0.0)
+  results <- rg.minimum.congestion.flow(g,comm,e=e,progress=progress)
+  ## now work out how much to scale demand to meet a max-flow target
+  multiplier <- (1-target)/(1-results$gamma)
+  ## and now scale the results
+  comm <- rg.rescale.demands(comm,multiplier,integer=TRUE)
+  flow.results <- rg.minimum.congestion.flow(g,comm,e=e,progress=progress)
+  int.results <- rg.max.concurrent.flow.int(g,flow.results$demands,e=e,progress=progress)
+  sp.results <- rg.sp.max.concurrent.flow(g,comm)
+  for(i in 1:length(flow.results$demands)) {
+    rounded.flows <- rg.smart.round(as.numeric(flow.results$demands[[i]]$paths))
+    if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+      rounded.flows[which.max(rounded.flows)] <- rounded.flows[which.max(rounded.flows)] -
+        sum(rounded.flows) + flow.results$demands[[i]]$demand
+    } else if(sum(rounded.flows) < flow.results$demands[[i]]$demand ) {
+      rounded.flows[which.max(rounded.flows)] <- rounded.flows[which.max(rounded.flows)] +
+        sum(rounded.flows) - flow.results$demands[[i]]$demand
+    }
+    if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+      cat(i,"too high","\n")
+    } else if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+      cat(i,"too low","\n")
+    }
+    count <- 1
+    for(j in names(flow.results$demands[[i]]$paths)) {
+      flow.results$demands[[i]]$paths[[j]] <- rounded.flows[count]
+      count <- count+1
+    }
+  }
+  flow.results$gflow <- rg.max.concurrent.flow.graph(flow.results$gflow,flow.results$demands)
+  flow.results$gamma <- rg.mcf.find.gamma(flow.results$gflow)
+  output <- list()
+  output$g <- g
+  output$sp.results <- sp.results
+  output$flow.results <- flow.results
+  output$int.results <- int.results
+  output$comm <- comm
+  network.name <- paste0(dir,network.name,"-")
+  cat(network.name,"sp=",sp.results$gamma,",flow=",flow.results$gamma,"int=",int.results$gamma,"\n")
+  cat("sp=",sp.results$gamma,",flow=",flow.results$gamma,"int=",int.results$gamma,"\n",
+      file=paste0(network.name,"results.txt"))
+  file <- paste0(network.name,"integer-flows.csv")
+  rg.demands.to.csv(int.results$demands,file)
+  file <- paste0(network.name,"sp-flows.csv")
+  rg.demands.to.csv(sp.results$demands,file)
+  file <- paste0(network.name,"split-flows.csv")
+  rg.demands.to.csv(flow.results$demands,file)
+  file <- paste0(network.name,"graph.csv")
+  write.table(as_adjacency_matrix(igraph.from.graphNEL(g),sparse=FALSE,attr="capacity"),file=file)
+  file <- paste0(network.name,"demands.csv")
+  rg.demands.to.csv(comm,file=file,paths=FALSE)
+  return(output)
+}
 
 
 ## test used for PURSUIT TM theory and ICC paper

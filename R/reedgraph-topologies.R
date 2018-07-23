@@ -63,7 +63,53 @@ rg.generate.connected.core <- function ##generate a fully connected core graphNE
     
 }
 
-
+rg.internet.topology.zoo.stats <- function(Nmax=Inf,zoo) {
+#    zoo <- rg.import.multi.gml()
+    MeanDegree <- c()
+    MaxDegree <- c()
+    N <- c()
+    RoundN <- c()
+    M <- c()
+    Name <- c()
+    Diameter <- c()
+    MeanLength <- c()
+    EstimateL <- c()
+    MaxL <- c()
+    for(z in names(zoo)) {
+        g <- zoo[[z]]
+        if(round(length(V(g))/10)*10 >Nmax)
+            next
+        if(!is.connected(g)) {
+            next
+        }
+        rN <- length(V(g))
+        Name <- c(Name,z)
+        g <- simplify(g)
+        degrees <- igraph::degree(g)
+        MeanLength <- c(MeanLength,average.path.length(g))
+        MeanDegree <- c(MeanDegree,mean(degrees))
+        MaxDegree <- c(MaxDegree,max(degrees))
+        N <- c(N,length(V(g)))
+        M <- c(M,length(E(g)))
+        RoundN <- c(RoundN,round(length(V(g))/10)*10)
+        Diameter <- c(Diameter,diameter(g))
+        ## could cancel rN here, but leaving it to remind how it is derived
+        EstimateL <- c(EstimateL,rN*(rN-1)*average.path.length(g)/rN)
+        MaxL <- c(MaxL,rN*(rN-1))
+    }
+    dat <- data.frame(Name=Name,
+                       N=N,
+                       RoundN=RoundN,
+                       M=M,
+                       MeanDegree=MeanDegree,
+                       MaxDegree=MaxDegree,
+                      Diameter=Diameter,
+                      MeanLength=MeanLength,
+                      EstimateL=EstimateL,
+                      MaxL=MaxL)
+    dat <- dat[order(dat$RoundN,dat$N),]
+    return(dat)
+}
 
 ### Creates a list with Latitude and Longitude infrormation from
 ### Toplogy Zoo data in igraph format

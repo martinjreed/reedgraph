@@ -1,3 +1,43 @@
+log10_minor_break = function (...){
+  function(x) {
+    minx         = floor(min(log10(x), na.rm=T))-1;
+    maxx         = ceiling(max(log10(x), na.rm=T))+1;
+    n_major      = maxx-minx+1;
+    major_breaks = seq(minx, maxx, by=1)
+    minor_breaks = 
+      rep(log10(seq(1, 9, by=1)), times = n_major)+
+      rep(major_breaks, each = 9)
+    return(10^(minor_breaks))
+  }
+}
+
+
+
+
+zipf.mandelbrot <- function(N=1000,alpha=1.0,var=0){
+  k = 1:N
+  dist <- length(k)/((k+var)^alpha)
+  nordist <- dist/sum(dist)
+  return(nordist)
+}
+
+rzipfm <- function(n=1,N=1000,alpha=1.0,var=0.0) {
+
+    tmp <- zipf.mandelbrot(N,alpha=alpha,var=0.0)
+ 
+    sample(x = c(1:length(tmp)),size = n,replace = TRUE,prob = tmp)
+}
+
+
+kl <- function(p,q) {
+    sum(p*log(p/q,2))
+}
+
+## Total variation distance
+## for finite countable alphabet tvd(p,q) <= sqrt(0.5*kl(p,q))
+tvd <- function(p,q) {
+    0.5*sum(abs(p-q))
+}
 
 
 geomean <- function(x, na.rm = FALSE, trim = 0, ...) {
@@ -143,4 +183,117 @@ summaryNEQuantile <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE
     datac <- rename(datac, c("mean"=measurevar))
     
     return(datac)
+}
+
+rg.lineplot <- function(results,summaryAlg=summaryNECI,eb=TRUE,
+                        xscale="X",
+                        yscale="Y",
+                        keys=NULL) {
+    reslong <- melt(results,variable.name="Type",
+                    value.name="Entries",
+                    measure.vars=colnames(results)[2:length(colnames(results))])
+    names(reslong)[1] <- "x"
+    ressum <- summaryAlg(reslong,"Entries",groupvars=c("Type","x"))
+    if(is.null(keys))
+        keys <- levels(reslong$Type)
+    p <- NULL
+    pd <- position_dodge(0)
+    #pl <<- position_dodge(.1)
+    pl <- ggplot(ressum,aes(x=x,y=Entries)) +
+        geom_line(aes(fill=factor(Type)),position=pd) +
+            geom_point(size=4,position=pd,aes(shape=factor(Type))) +
+                scale_shape_discrete(labels=keys) +
+                    scale_x_continuous(name=xscale) +
+                        scale_y_continuous(name=yscale)+
+                            theme(legend.position=c(.25, .8),
+                                  legend.title=element_blank())
+    if(eb)
+        pl <- pl + geom_errorbar(aes(ymin=ciNeg, ymax=ciPos),
+                                      width=1.5, position=pd)
+
+    pl
+}
+
+## results - wide format results, first column must be x axis
+rg.boxplot <- function(results,
+                       yscale="Y",
+                       xscale="X",
+                       keytitle="",
+                       keys=NULL) {
+    #theme_set( theme_bw(base_size=24,base_family= "serif"))
+    ## to plot results you can use something like
+    reslong <- melt(results,variable.name="Type",
+                    value.name="Entries",
+                    measure.vars=colnames(results)[2:length(colnames(results))])
+    ressum <- summarySE(reslong,"Entries",groupvars=c("Type",colnames(results)[1]))
+    ###reslong$Type <- factor(reslong$Type,
+###                       levels=c("BFwithTables","BFoneTable","L2switch"))
+    update_geom_defaults("point", list(colour = NULL))
+    if(is.null(keys))
+        keys <- levels(reslong$Type)
+                                        #print(factor(reslong[[1]]))
+
+                                        #return(TRUE)
+    names(reslong)[1] <- "x"
+    p <- ggplot(reslong,aes(x=factor(x),y=Entries)) +
+        geom_boxplot(aes(colour=factor(Type))) +
+            ## see http://colorbrewer2.org
+            scale_colour_manual(labels=keys,
+                                values=c("#e66101","#5e3c99", "#fdb863", "#b2abd2")) +
+            ##scale_colour_brewer(palette="PuOr") +
+            ##scale_colour_grey(start=0,end=0.5,
+            ##                  labels=c("A","B")) +
+            ##scale_colour_discrete(name="Implementation") +
+                theme(legend.position=c(.2, .85),legend.title=element_blank()) +
+                    scale_x_discrete(name=xscale) +
+                        ##scale_y_continuous(limits=c(0,100),name=
+                        scale_y_continuous(name=yscale)
+    update_geom_defaults("point", list(colour = "black"))
+    p
+}
+
+rg.cdf <- function(results,
+                   yscale="Y",
+                   xscale="X",
+                   keytitle="",
+                   keys=NULL,
+                   xmax=NULL,
+                   xlimit=NULL,
+                   rectangle=NULL) {
+    theme_set(theme_grey(base_family="Times",base_size=18))
+    #theme_set( theme_bw(base_size=24,base_family= "serif"))
+    ## to plot results you can use something like
+    reslong <- melt(results,variable.name="Type",
+                    value.name="Entries",
+                    measure.vars=colnames(results)[2:length(colnames(results))])
+    ressum <- summarySE(reslong,"Entries",groupvars=c("Type",colnames(results)[1]))
+###reslong$Type <- factor(reslong$Type,
+###                       levels=c("BFwithTables","BFoneTable","L2switch"))
+    update_geom_defaults("point", list(colour = NULL))
+    if(is.null(keys))
+        keys <- levels(reslong$Type)
+    names(reslong)[1] <- "x"
+
+    p <- ggplot(reslong,aes(x=Entries,colour=Type)) +
+        stat_ecdf(size=1.2) +
+            ## see http://colorbrewer2.org
+            scale_colour_manual(labels=keys,
+                                values=c("#e66101", "#fdb863", "#b2abd2","#5e3c99")) +
+    ##scale_colour_brewer(palette="PuOr") +
+    ##scale_colour_grey(start=0,end=0.5,
+    ##                  labels=c("A","B")) +
+    ##scale_colour_discrete(name="Implementation") +
+    theme(legend.position=c(.85, .10),legend.title=element_blank()) +
+        scale_x_continuous(name=xscale) +
+            ##scale_y_continuous(limits=c(0,100),name=
+            scale_y_continuous(name=yscale)
+    if(!is.null(xlimit))
+        p <- p+ coord_cartesian(xlim = xlimit)
+    if(!is.null(rectangle))
+        p <- p+annotate("rect",xmin=rectangle[1],xmax=rectangle[2],
+                        ymin=rectangle[3],ymax=rectangle[4], alpha=0.05,
+                        linetype=2,color="black",size=0.2)
+
+    update_geom_defaults("point", list(colour = "black"))
+    p
 }

@@ -23,6 +23,20 @@ reedgraphEnv$BLOOMLENGTH <- 256
 reedgraphEnv$BLOOMCHUNKS <- ceiling(reedgraphEnv$BLOOMLENGTH/32)
 reedgraphEnv$ALLZEROS <- rep(0,reedgraphEnv$BLOOMCHUNKS)
 
+## add a adjacency matrix to g for fast edge look up
+## g an igraph
+rg.add.adjacency.lookup <- function(g) {
+    N <- length(V(g))
+    edgeM <- matrix(nrow=N,ncol=N)
+    for(i in 1:length(E(g))) {
+        st <- ends(g,E(g)[i])
+        edgeM[as.integer(st[1]),as.integer(st[2])] <- i
+    }
+    g$edgeM <- edgeM
+    return(g)
+}
+
+
 ## CAREFUL this library uses a fragile encoding of length.
 ## you must not change the Bloom length and then use variables
 ## that were generated using the old Bloom length
@@ -116,11 +130,11 @@ rg.test.fp.range.k <- function(n,t,k=c(1),a) {
     
 }
 
-### Function to print binary pattern.
-rg.bloom.to.binary <- function(val) {
+### Function to print binary pattern as a string
+rg.bloom.to.binary <- function(val,len=reedgraphEnv$BLOOMLENGTH) {
     
     result <- c()
-    for(i in 1:reedgraphEnv$BLOOMLENGTH) {
+    for(i in 1:len) {
         ind <- (i-1) %/% 32  + 1
         mybit <- bitAnd(val[ind],1)
         result <- c(mybit,result)
@@ -129,14 +143,18 @@ rg.bloom.to.binary <- function(val) {
     return(rev(result))
 }
 
-rg.binary.to.bloom <- function(string) {
-  result <- 0
-  for(i in 1:reedgraphEnv$BLOOMLENGTH) {
-      result <- result *2
-
-    result <- bitOr(result,string[i])
-  }
-  return(result)
+## Convert a string pattern like "0 0 1 0 .....0" to the internal bloom representation
+rg.binary.to.bloom <- function(string,len=reedgraphEnv$BLOOMLENGTH) {
+    bloomchunks <- ceiling(len/32)
+    allzeros <- rep(0,bloomchunks)
+    
+    result <- allzeros
+    for(i in len:1) {
+        ind <- (i-1) %/% 32  + 1
+        result[ind] <- bitShiftL(result[ind],1)
+        result[ind] <- bitOr(result[ind],string[i])
+    }
+    return(result)
 }
 
 ### combinations possible with
@@ -229,7 +247,8 @@ rg.assign.lids.to.graph <- function(g,k=7) {
 ### value - vector representing fid
 rg.create.fid <- function(graph,path) {
   fid <- reedgraphEnv$ALLZEROS
-  for(lid in E(graph,path=path)$lid) {
+  for(i in 1:(length(path)-1)) {
+      lid <- E(graph)[path[i] %->% path[i+1]]$lid[[1]]
     fid <- bitOr(fid,lid)
   }
   return(fid)
@@ -245,41 +264,67 @@ rg.create.fid <- function(graph,path) {
 ### tpcount - count of true positives
 ### tncount - count of true negatives
 ###   ther are no false negatives for LIPSIN
+### graph - igraph
+### pathtype:
+###     single - vector of vertices 1 2 3 which make a unicast path (an old format)
+###     pairs  - a matrix of path pairs  (1,2) (2,3) which can cope with multicast
+###              it assumes the links have been stored missing duplicates in the tree
 #### WARNING may be broken, igraph stores the lids as seperate objects not concatonated list
-rg.bloom.false.positive.on.path <- function(graph,path,fid) {
+rg.bloom.false.positive.on.path <- function(graph,path,fid,pathtype="single") {
   if(!is.simple(graph)) {
     cat("Error in rg.bloom.false.positive, not a simple graph\n")
     return(NULL)
   }
-  previous <- -1
-  current <- path[1]
-  fpcount <- 0
-  tpcount <- 0
-  tncount <- 0
-  for(nxt in path[2:length(path)]) {
-      n <- neighbors(graph,current)
-      if(previous==-1) {
-          tests <- n[n!=nxt]
-      } else {
-          tests <- n[n!=nxt & n!=previous]
+  if(pathtype == "single") {
+      #cat(path,"\n")
+      #cat("FID   :",rg.bloom.to.binary(fid),"\n")
+      edgeM <- graph$edgeM
+      previous <- -1
+      current <- path[1]
+      fpcount <- 0
+      tpcount <- 0
+      tncount <- 0
+      for(i in 1:length(path)) {
+          current <- path[i]
+          if(i != length(path))
+              nxt <- path[i+1]
+          else
+              nxt <- -1
+          n <- neighbors(graph,current)
+          
+          if(nxt==-1) {
+              tests <- n[n!=previous]
+          } else if(previous==-1) {
+              tests <- n[n!=nxt]
+          } else {
+              tests <- n[n!=nxt & n!=previous]
+          }
+          for(t in tests) {
+              #if(rg.test.member(fid,E(graph)[ current %->% t ]$lid[[1]])) {
+              #print(c(current,t))
+              #print(graph$edgeM[current,t])
+              lid <- E(graph)[edgeM[current,t]]$lid[[1]]
+              #cat(current,"->",t,":")
+              #cat(rg.bloom.to.binary(lid),"\n")
+              if(identical(bitXor(bitAnd(fid,lid),lid) ,reedgraphEnv$ALLZEROS)) {
+              #if(rg.test.member(fid,E(graph)[edgeM[current,t]]$lid[[1]])) {
+                  fpcount <- fpcount + 1
+                  #cat("false positive:",current,"->",t,"\n")
+              } else {
+                  tncount <- tncount + 1
+              }
+          }
+          previous <- current
+          tpcount <- tpcount + 1
       }
-      for(t in tests) {
-      if(rg.test.member(fid,E(graph)[ current %->% t ]$lid[[1]])) {
-          fpcount <- fpcount + 1
-        ##cat("false positive\n")
-      } else {
-          tncount <- tncount + 1
-      }
-    }
-    previous <- current
-    current <- nxt
-    tpcount <- tpcount + 1
+      count <- list()
+      count$fpcount <- fpcount
+      count$tpcount <- tpcount
+      count$tncount <- tncount
+      return(count)
+  } else if(pathtype == "pairs") {
+      print("Warning pairs not implemented")
   }
-  count <- list()
-  count$fpcount <- fpcount
-  count$tpcount <- tpcount
-  count$tncount <- tncount
-  return(count)
 }
 
 ### Returns the false positive count on each unicast path of length 1 ... diameter
@@ -297,21 +342,23 @@ rg.test.false.positives.all.paths <- function(graph) {
                 fid <- rg.create.fid(graph,path)
                 
                 pcount <- rg.bloom.false.positive.on.path(graph,path,fid)
+                if(pcount$fpcount>0)
+                    #print(path)
                 if(is.na(fpcount[nelements])) {fpcount[nelements] <- 0}
                 if(is.na(tpcount[nelements])) {tpcount[nelements] <- 0}
-        if(is.na(tncount[nelements])) {tncount[nelements] <- 0}
-        fpcount[nelements] <- fpcount[nelements] + pcount$fpcount
-        tpcount[nelements] <- tpcount[nelements] + pcount$tpcount
-        tncount[nelements] <- tncount[nelements] + pcount$tncount
-      }
+                if(is.na(tncount[nelements])) {tncount[nelements] <- 0}
+                fpcount[nelements] <- fpcount[nelements] + pcount$fpcount
+                tpcount[nelements] <- tpcount[nelements] + pcount$tpcount
+                tncount[nelements] <- tncount[nelements] + pcount$tncount
+            }
+        }
     }
-}
-        result <- list()
+    result <- list()
     
-  result$fpcount <- fpcount
-  result$tpcount <- tpcount
-  result$tncount <- tncount
-  return(result)
+    result$fpcount <- fpcount
+    result$tpcount <- tpcount
+    result$tncount <- tncount
+    return(result)
 }
 
 rg.test.false.posititives.loop <- function(graph,k=7) {

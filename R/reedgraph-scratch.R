@@ -676,6 +676,38 @@ rg.smart.round <- function(x) {
   y
 }
 
+rg.random.round <- function(demand,paths) {
+  total <- 0
+  newpaths <- paths
+  for(path in names(paths)){
+    newpaths[[path]] <- floor(paths[[path]])
+    total <- total + newpaths[[path]] 
+  }
+  #return(NULL)
+  while(total < demand) {
+    # we want the order to be random, in case we do this again
+    # otherwise earlier paths will be biased to get rounded before we finish
+    for(path in sample(names(paths))){
+      if(rbinom(1,1,paths[[path]] %% 1)) {
+        newpaths[[path]] <- newpaths[[path]] + 1
+        total <- total +1
+        if(total >= demand)
+          break
+      }
+    }
+    
+  }
+  paths <- list()
+  for(path in names(newpaths)){
+    if(newpaths[[path]] > 0) {
+      paths[[path]] <- newpaths[[path]]
+    }
+  }
+ 
+  return(paths)
+}
+
+
 
 rg.karcius.run.all <- function(gnames=NULL,targets=NULL,zoo=zoo,dir="./",incomm=NULL,progress=FALSE,e=0.1) {
   g <- NULL
@@ -703,9 +735,64 @@ rg.karcius.run.all <- function(gnames=NULL,targets=NULL,zoo=zoo,dir="./",incomm=
   }
 }
 
+
+## returns the bounds on gamma as absolute gamma values in the form
+## probs can be a vector if you want to calculate more than one value
+# c(maxbound,firstprob, secondprob .....)
+rg.karcius.determine.bounds <- function(flow.results,e,probs=c(0.05,0.01,0.0)) {
+  gcount <- flow.results$gflow
+  gcount <- rg.set.weight(gcount,0.0)
+
+  for(d in flow.results$demands) {
+    for(p in names(d$paths)) {
+      pv <- as.vector(strsplit(p,"|",fixed=TRUE)[[1]])
+      fromlist <- pv[1:length(pv)-1]
+      tolist <- pv[2:length(pv)]
+      
+      weights <- as.double(edgeData(gcount,from=fromlist,
+                                    to=tolist,att="weight"))
+      weights <- weights + 1
+      edgeData(gcount,from=fromlist,
+               to=tolist,
+               att="weight") <- weights
+
+    }
+  }
+  # tricky this, the bound we are using is for opt being lambda' of the transformed problem
+  # and a found value lambda (which is likely to be smaller than the optimum)
+  # lambda' >= lambda >= lambda * (1+e)^3
+  # but we have transformation 1/lambda=gamma, so we have for found gamma that the opt gamma'
+  # gamma' <= 1 - (1-gamma)/1-e)^-3
+  maxgammabound=1 - (1-flow.results$gamma)/(1-e)^-3
+  mingammabound <- rep(Inf,length(probs))
+  for(pi in 1:length(probs)) {
+    
+    for(ep in rg.edgeL(gcount)) {
+      weight <- as.numeric(edgeData(flow.results$gflow,from=ep[1],to=ep[2],att="weight"))
+      capacity <- as.numeric(edgeData(flow.results$gflow,from=ep[1],to=ep[2],att="capacity"))
+      n <- as.numeric(edgeData(gcount,from=ep[1],to=ep[2],att="weight"))
+      # the most we can round is by n units (where n is the number of flows)
+      if(p == 0.0){
+        gammaest <- (capacity - (weight + n)) / capacity
+      }
+      # this is an estimate of a bound, it might be pessimistic
+      add <- n/2 *sqrt(-6 * log(probs[pi]) / n)
+      # it certainly cannot be bigger than n
+      if(add > n) add <- n
+      gammaest <- (capacity - (weight + add))/capacity
+      if (mingammabound[pi] > gammaest) {
+        mingammabound[pi] <- gammaest
+      }
+    }
+    
+  }
+  return(c(maxgammabound,mingammabound))
+}
+
 rg.karcius <- function(g=NULL,comm=NULL,dir="./",network.name="unknown-net",target=0.3,e=0.1,progress=FALSE) {
   N <- length(nodes(g))
-  g <- rg.set.capacity(g,10000)
+  # note this was 10000 before Sept 2018
+  g <- rg.set.capacity(g,500)
   #comm <- rg.gen.demands(g,val=10)
   g <- rg.set.weight(g,0.0)
   results <- rg.minimum.congestion.flow(g,comm,e=e,progress=progress)
@@ -713,40 +800,73 @@ rg.karcius <- function(g=NULL,comm=NULL,dir="./",network.name="unknown-net",targ
   multiplier <- (1-target)/(1-results$gamma)
   ## and now scale the results
   comm <- rg.rescale.demands(comm,multiplier,integer=TRUE)
+  #cat("done rescale\n")
   flow.results <- rg.minimum.congestion.flow(g,comm,e=e,progress=progress)
+  #cat("done rg.minimum.congestion.flow\n")
   int.results <- rg.max.concurrent.flow.int(g,flow.results$demands,e=e,progress=progress)
+  #cat("done rg.max.concurrent.flow.int\n")
+
   sp.results <- rg.sp.max.concurrent.flow(g,comm)
-  for(i in 1:length(flow.results$demands)) {
-    rounded.flows <- rg.smart.round(as.numeric(flow.results$demands[[i]]$paths))
-    if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+  #cat("done rg.sp.max.concurrent.flow\n")
+  flow.results.rounded <- flow.results
+  flow.results.random <- flow.results
+  #cat("rounding",length(flow.results$demands),"\n")
+  for(i in 1:length(flow.results.rounded$demands)) {
+    #cat("num paths",length(flow.results$demands[[i]]$paths),"\n")
+    #print(as.numeric(flow.results$demands[[i]]$paths))
+    random.paths <- rg.random.round(flow.results$demands[[i]]$demand,flow.results$demands[[i]]$paths)
+    flow.results.random$demands[[i]]$paths <- random.paths
+
+    ## this rounding needs putting inside the rg.smart.round function, leave it here for now
+    rounded.flows <- rg.smart.round(as.numeric(flow.results.rounded$demands[[i]]$paths))
+    if(sum(rounded.flows) > flow.results.rounded$demands[[i]]$demand ) {
       rounded.flows[which.max(rounded.flows)] <- rounded.flows[which.max(rounded.flows)] -
-        sum(rounded.flows) + flow.results$demands[[i]]$demand
-    } else if(sum(rounded.flows) < flow.results$demands[[i]]$demand ) {
+        sum(rounded.flows) + flow.results.rounded$demands[[i]]$demand
+    } else if(sum(rounded.flows) < flow.results.rounded$demands[[i]]$demand ) {
       rounded.flows[which.max(rounded.flows)] <- rounded.flows[which.max(rounded.flows)] +
-        sum(rounded.flows) - flow.results$demands[[i]]$demand
+        sum(rounded.flows) - flow.results.rounded$demands[[i]]$demand
     }
-    if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+    if(sum(rounded.flows) > flow.results.rounded$demands[[i]]$demand ) {
       cat(i,"too high","\n")
-    } else if(sum(rounded.flows) > flow.results$demands[[i]]$demand ) {
+    } else if(sum(rounded.flows) > flow.results.rounded$demands[[i]]$demand ) {
       cat(i,"too low","\n")
     }
     count <- 1
-    for(j in names(flow.results$demands[[i]]$paths)) {
-      flow.results$demands[[i]]$paths[[j]] <- rounded.flows[count]
+    for(j in names(flow.results.rounded$demands[[i]]$paths)) {
+      flow.results.rounded$demands[[i]]$paths[[j]] <- rounded.flows[count]
       count <- count+1
     }
   }
-  flow.results$gflow <- rg.max.concurrent.flow.graph(flow.results$gflow,flow.results$demands)
-  flow.results$gamma <- rg.mcf.find.gamma(flow.results$gflow)
+  #cat("finished rounding\n")
+
+  flow.results.rounded$gflow <- rg.max.concurrent.flow.graph(flow.results.rounded$gflow,flow.results.rounded$demands)
+  flow.results.random$gflow <- rg.max.concurrent.flow.graph(flow.results.random$gflow,
+                                                            flow.results.random$demands)
+  #cat("done flow results\n")
+  flow.results.rounded$gamma <- rg.mcf.find.gamma(flow.results.rounded$gflow)
+  flow.results.random$gamma <- rg.mcf.find.gamma(flow.results.random$gflow)
+  #cat("building output\n")
   output <- list()
   output$g <- g
   output$sp.results <- sp.results
   output$flow.results <- flow.results
+  output$flow.results.rounded <- flow.results.rounded
+  output$flow.results.random <- flow.results.random
   output$int.results <- int.results
   output$comm <- comm
   network.name <- paste0(dir,network.name,"-")
-  cat(network.name,"sp=",sp.results$gamma,",flow=",flow.results$gamma,"int=",int.results$gamma,"\n")
-  cat("sp=",sp.results$gamma,",flow=",flow.results$gamma,"int=",int.results$gamma,"\n",
+  bounds <- rg.karcius.determine.bounds(flow.results,e=e,probs=c(0.05,0.01,0))
+  #cat(network.name,"sp=",sp.results$gamma,", flow=",flow.results$gamma,", int=",int.results$gamma,"\n")
+  cat(network.name," sp=",sp.results$gamma,", int=",int.results$gamma,"\n",
+      ", flowrounded=",flow.results.rounded$gamma,
+      ", flowrandom=",flow.results.random$gamma,
+      ", flow=",flow.results$gamma, ", flowub=",bounds[1], ", flowlb0.05=",bounds[2],
+      ", flowlb0.01=",bounds[3],", flowlb=",bounds[4],"\n")
+  cat("sp=",sp.results$gamma,", int=",int.results$gamma,"\n",
+      ", flowrounded=",flow.results.rounded$gamma,
+      ", flowrandom=",flow.results.random$gamma,
+      ", flow=",flow.results$gamma, ", flowub=",bounds[1], ", flowlb0.05=",bounds[2],
+      ", flowlb0.01=",bounds[3],", flowlb=",bounds[4],
       file=paste0(network.name,"results.txt"))
   file <- paste0(network.name,"integer-flows.csv")
   rg.demands.to.csv(int.results$demands,file)
@@ -754,10 +874,15 @@ rg.karcius <- function(g=NULL,comm=NULL,dir="./",network.name="unknown-net",targ
   rg.demands.to.csv(sp.results$demands,file)
   file <- paste0(network.name,"split-flows.csv")
   rg.demands.to.csv(flow.results$demands,file)
+  file <- paste0(network.name,"rounded-flows.csv")
+  rg.demands.to.csv(flow.results.rounded$demands,file)
+  file <- paste0(network.name,"random-flows.csv")
+  rg.demands.to.csv(flow.results.random$demands,file)
   file <- paste0(network.name,"graph.csv")
   write.table(as_adjacency_matrix(igraph.from.graphNEL(g),sparse=FALSE,attr="capacity"),file=file)
   file <- paste0(network.name,"demands.csv")
   rg.demands.to.csv(comm,file=file,paths=FALSE)
+  #cat("written output\n")
   return(output)
 }
 

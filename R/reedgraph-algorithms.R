@@ -648,7 +648,8 @@ calcLambda <- function(demands) {
 ### e: approximation value for a w-opt solution
 ###    where (1+w) = (1-e)^2 (default e=0.1)
 ### progress: display graphical progress bar (default false)
-rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation="random",deltaf=1.0) {
+rg.max.concurrent.flow.prescaled <- function(g,demands,e=0.1,
+                                             progress=FALSE,ccode=TRUE,updateflow=TRUE,permutation="random",deltaf=1.0) {
 
   savedemands <- demands
   ## first obtain a reasonable feasible flow using
@@ -1737,15 +1738,30 @@ rg.max.concurrent.flow.rescale.demands.flow <- function(demands,scalef) {
 }
 
 rg.rescale.demands <- function(demands,scalef,integer=FALSE) {
-
+  count <- 1
+  newdemands <- list()
   for(dn in names(demands)) {
     if(integer) {
-      demands[[dn]]$demand <- round(demands[[dn]]$demand * scalef)
+      # careful here, rounding to down to zero causes unexpected results!
+      # hence do not include demands with zero
+      if(rbinom(1,1,demands[[dn]]$demand %% 1)) {
+        demands[[dn]]$demand <- ceiling(demands[[dn]]$demand * scalef)
+      } else {
+        demands[[dn]]$demand <- floor(demands[[dn]]$demand * scalef)
+      }
+      if(demands[[dn]]$demand > 0) {
+        newdemands[[count]] <- demands[[dn]]
+        count <- count + 1
+      }
+
     } else {
       demands[[dn]]$demand <- demands[[dn]]$demand * scalef
     }
   }
-  demands
+  if(integer)
+    return(newdemands)
+  else
+    return(demands)
 }
 
 rg.set.all.graph.edge.weights <- function(g,val=0.0)  {
@@ -1811,7 +1827,8 @@ rg.mcf.find.gamma <- function(gflow,lambda=1.0) {
 ###            gflow - GraphNEL with attr weight set
 ###            demands - list with paths and edges of solution
 ###            gamma - minimum proportion of free edge capacity
-rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
+### NOTE TWO VERSIONS! this one was the original, but now c code does prescaling!
+rg.minimum.congestion.flow.test <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
     if(!isDirected(g)) {
         print("g must be directed")
         return(NULL)
@@ -1825,6 +1842,23 @@ rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutatio
   
   res
 }
+
+rg.minimum.congestion.flow <- function(g,demands,e=0.1,progress=FALSE,permutation="random",deltaf=1.0,ccode=TRUE) {
+    if(!isDirected(g)) {
+        print("g must be directed")
+        return(NULL)
+    }
+    res <- rg.fleischer.max.concurrent.flow.c(g,demands,e,progress=progress,ccode,permutation=permutation,deltaf=1.0)
+    res$demansunscaled <- res$demands
+  res$demands <- rg.max.concurrent.flow.rescale.demands.flow(res$demands,1/res$lambda)
+  
+  res$gflow <- rg.max.concurrent.flow.graph(res$gflow,res$demands)
+  
+  res$gamma <- rg.mcf.find.gamma(res$gflow)
+  
+  res
+}
+
 
 ### Truncated quantile function for an arbitrary distribution
 ### spec = distribution name

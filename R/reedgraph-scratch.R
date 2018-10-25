@@ -766,7 +766,6 @@ rg.karcius.determine.bounds <- function(flow.results,e,probs=c(0.05,0.01,0.0)) {
   maxgammabound=1 - (1-flow.results$gamma)/(1-e)^-3
   mingammabound <- rep(Inf,length(probs))
   for(pi in 1:length(probs)) {
-    
     for(ep in rg.edgeL(gcount)) {
       weight <- as.numeric(edgeData(flow.results$gflow,from=ep[1],to=ep[2],att="weight"))
       capacity <- as.numeric(edgeData(flow.results$gflow,from=ep[1],to=ep[2],att="capacity"))
